@@ -140,8 +140,7 @@ impl FileStore {
     /// * `prefix` - Key prefix to match (e.g., "credential:aws-s3:")
     ///
     /// Returns sorted list of matching keys.
-    #[allow(dead_code)]
-    async fn list_internal(&self, prefix: &str) -> Result<Vec<String>> {
+    pub async fn list_internal(&self, prefix: &str) -> Result<Vec<String>> {
         let mut keys = Vec::new();
 
         let mut entries = tokio::fs::read_dir(&self.base_path).await?;

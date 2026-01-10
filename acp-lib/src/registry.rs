@@ -8,7 +8,10 @@
 //! The actual values (token strings, plugin code, credential values) are still
 //! stored at their individual keys. The registry only tracks metadata.
 
-use crate::{storage::SecretStore, AcpError, Result};
+use crate::{
+    storage::{FileStore, SecretStore},
+    AcpError, AgentToken, PluginRuntime, Result,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -185,6 +188,98 @@ impl Registry {
     pub async fn list_credentials(&self) -> Result<Vec<CredentialEntry>> {
         let data = self.load().await?;
         Ok(data.credentials)
+    }
+
+    // Migration support
+
+    /// Migrate existing FileStore data to registry
+    ///
+    /// This method is used during server startup to migrate from old installations
+    /// that have tokens, plugins, and credentials stored but no _registry key.
+    ///
+    /// It only runs if the registry doesn't exist yet. If a registry already exists,
+    /// this method does nothing (returns Ok immediately).
+    ///
+    /// # Arguments
+    /// * `file_store` - Reference to the FileStore to migrate from
+    ///
+    /// # Returns
+    /// * Ok(()) if migration succeeded or was skipped (registry already exists)
+    /// * Err if migration failed
+    pub async fn migrate_from_file_store(&self, file_store: &FileStore) -> Result<()> {
+        // Check if registry already exists
+        if self.store.get(Self::KEY).await?.is_some() {
+            // Registry already exists, skip migration
+            return Ok(());
+        }
+
+        // Build registry from existing keys
+        let mut data = RegistryData::default();
+
+        // Migrate tokens: keys like "token:abc123"
+        let token_keys = file_store.list_internal("token:").await?;
+        for key in token_keys {
+            // Load the token to get metadata
+            if let Some(token_bytes) = self.store.get(&key).await? {
+                if let Ok(token) = serde_json::from_slice::<AgentToken>(&token_bytes) {
+                    let entry = TokenEntry {
+                        id: token.id.clone(),
+                        name: token.name.clone(),
+                        created_at: token.created_at,
+                        prefix: format!("acp_{}", &token.id[..6.min(token.id.len())]),
+                    };
+                    data.tokens.push(entry);
+                }
+            }
+        }
+
+        // Migrate plugins: keys like "plugin:exa"
+        let plugin_keys = file_store.list_internal("plugin:").await?;
+        for key in plugin_keys {
+            // Extract plugin name from key "plugin:name" -> "name"
+            let plugin_name = key.strip_prefix("plugin:").unwrap_or(&key);
+
+            // Load the plugin code to extract metadata
+            if let Some(plugin_code) = self.store.get(&key).await? {
+                if let Ok(code_str) = String::from_utf8(plugin_code) {
+                    // Use PluginRuntime to extract metadata
+                    if let Ok(mut runtime) = PluginRuntime::new() {
+                        // Execute the plugin code first to set up the global plugin object
+                        if runtime.execute(&code_str).is_ok() {
+                            if let Ok(metadata) =
+                                runtime.extract_plugin_metadata(plugin_name)
+                            {
+                                let entry = PluginEntry {
+                                    name: plugin_name.to_string(),
+                                    hosts: metadata.match_patterns,
+                                    credential_schema: metadata.credential_schema,
+                                };
+                                data.plugins.push(entry);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Migrate credentials: keys like "credential:plugin:field"
+        let credential_keys = file_store.list_internal("credential:").await?;
+        for key in credential_keys {
+            // Parse key "credential:plugin:field" -> plugin="plugin", field="field"
+            let parts: Vec<&str> = key.split(':').collect();
+            if parts.len() == 3 && parts[0] == "credential" {
+                let entry = CredentialEntry {
+                    plugin: parts[1].to_string(),
+                    field: parts[2].to_string(),
+                };
+                data.credentials.push(entry);
+            }
+        }
+
+        // Save the registry
+        self.save(&data).await?;
+
+        Ok(())
     }
 }
 
