@@ -178,7 +178,7 @@ pub fn status() {
 
     // Check if plist exists
     if !plist_path.exists() {
-        println!("Service is not installed");
+        println!("not installed");
         return;
     }
 
@@ -190,14 +190,36 @@ pub fn status() {
     match output {
         Ok(output) => {
             if output.status.success() {
-                println!("Service is running");
-                println!("{}", String::from_utf8_lossy(&output.stdout));
+                // Parse the output to get PID
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // launchctl list output format:
+                // PID    Status  Label
+                // 12345  0       com.acp.server
+                // or just the label if not running
+
+                // Look for lines containing the label
+                for line in stdout.lines() {
+                    if line.contains("com.acp.server") {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        if parts.len() >= 3 {
+                            // First part is PID (or "-" if not running)
+                            if parts[0] != "-" {
+                                println!("running (pid {})", parts[0]);
+                                return;
+                            }
+                        }
+                    }
+                }
+                // If we get here, the service is loaded but not running
+                println!("not running");
             } else {
-                println!("Service is not running");
+                // launchctl list failed, service not loaded
+                println!("not running");
             }
         }
         Err(e) => {
-            eprintln!("Error checking status: {}", e);
+            eprintln!("Error checking service status: {}", e);
+            std::process::exit(1);
         }
     }
 }
