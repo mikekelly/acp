@@ -1,0 +1,89 @@
+//! ACP Server - Agent Credential Proxy daemon
+//!
+//! This binary runs the proxy server and management API.
+//! It handles:
+//! - MITM proxy with TLS termination
+//! - Plugin execution for request transformation
+//! - Management API for configuration
+//! - Secure credential storage
+
+use acp_lib::Config;
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "acp-server")]
+#[command(author, version, about = "Agent Credential Proxy Server", long_about = None)]
+struct Args {
+    /// Proxy port
+    #[arg(long, default_value = "9443")]
+    proxy_port: u16,
+
+    /// Management API port
+    #[arg(long, default_value = "9080")]
+    api_port: u16,
+
+    /// Data directory (for container/Linux mode)
+    #[arg(long)]
+    data_dir: Option<String>,
+
+    /// Log level
+    #[arg(long, default_value = "info")]
+    log_level: String,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    // Initialize tracing with configured log level
+    tracing_subscriber::fmt()
+        .with_env_filter(args.log_level.clone())
+        .init();
+
+    // Build configuration
+    let config = Config::new()
+        .with_proxy_port(args.proxy_port)
+        .with_api_port(args.api_port);
+
+    let config = if let Some(data_dir) = args.data_dir {
+        config.with_data_dir(data_dir)
+    } else {
+        config
+    };
+
+    tracing::info!(
+        "Starting ACP Server (placeholder - Phase 4+ will implement actual server)"
+    );
+    tracing::info!("Proxy port: {}", config.proxy_port);
+    tracing::info!("API port: {}", config.api_port);
+
+    // Placeholder - actual server implementation in later phases
+    println!("ACP Server started (foundation only - see Phase 4+)");
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_args_parsing() {
+        let args = Args::parse_from(["acp-server"]);
+        assert_eq!(args.proxy_port, 9443);
+        assert_eq!(args.api_port, 9080);
+    }
+
+    #[test]
+    fn test_args_custom_ports() {
+        let args = Args::parse_from(["acp-server", "--proxy-port", "8443", "--api-port", "8080"]);
+        assert_eq!(args.proxy_port, 8443);
+        assert_eq!(args.api_port, 8080);
+    }
+
+    #[test]
+    fn test_args_data_dir() {
+        let args = Args::parse_from(["acp-server", "--data-dir", "/var/lib/acp"]);
+        assert_eq!(args.data_dir, Some("/var/lib/acp".to_string()));
+    }
+}
