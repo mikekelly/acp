@@ -485,9 +485,11 @@ async fn install_plugin(
     let plugin_name = format!("{}/{}", owner, repo);
     let (transformed_code, plugin) = {
         // Configure credentials callback for public repositories
+        // git2 requires a callback even for public repos, or it may fail with:
+        // "remote authentication required but no callback set"
         let mut callbacks = RemoteCallbacks::new();
         callbacks.credentials(|_url, _username_from_url, _allowed_types| {
-            // For public repos, just use default credentials (none)
+            // For public HTTPS repos, return default (empty) credentials
             Cred::default()
         });
 
