@@ -64,6 +64,7 @@ cargo run --bin acp-server  # Run server
 
 ## CLI (Phase 7)
 - **Password input**: Uses `rpassword` crate for hidden password input (no echo)
+- **ACP_PASSWORD env var**: Set `ACP_PASSWORD` to bypass interactive password prompt for testing/automation
 - **Password hashing**: Client-side SHA512 hashing via `sha2` crate before sending to API
 - **HTTP client**: Built with `reqwest` 0.12, handles JSON requests/responses
 - **Server URL**: Configurable via `--server` flag (default: http://localhost:9080)
@@ -89,3 +90,4 @@ cargo run --bin acp-server  # Run server
 - **Axum authentication**: Custom extractors using `FromRequest` with request body are complex in Axum 0.7. Simpler to use helper functions that take `Bytes` parameter and verify authentication manually in each handler.
 - **Argon2 password hashing**: Client sends SHA512(password), server stores Argon2(SHA512(password)). Verification uses `Argon2::default().verify_password()` with client's SHA512 hash against stored Argon2 hash.
 - **PluginRuntime single-context limitation**: Loading a plugin overwrites the global `plugin` object in the JS context. Only the most recently loaded plugin's transform function can be executed. Plugin metadata (name, patterns, schema) is preserved for all loaded plugins.
+- **Environment variable test isolation**: Tests modifying environment variables must use a static Mutex to serialize execution and an RAII guard to ensure cleanup, as env vars are process-global and tests run in parallel.
