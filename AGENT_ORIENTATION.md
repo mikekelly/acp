@@ -27,7 +27,7 @@ cargo run --bin acp-server  # Run server
 - `AgentToken` - Bearer token for agent authentication (token field is public for direct access)
 - `Config` - Runtime configuration
 - `AcpError` - Unified error type with context helpers (includes Network and Protocol variants)
-- `PluginRuntime` - Sandboxed Boa JS runtime with ACP.crypto, ACP.util, TextEncoder/TextDecoder
+- `PluginRuntime` - Sandboxed Boa JS runtime with ACP.crypto, ACP.util, ACP.log, TextEncoder/TextDecoder, URL/URLSearchParams
 - `SecretStore` - Async trait for secure storage (FileStore, KeychainStore implementations)
 - `FileStore` - File-based storage with 0600 permissions, base64url-encoded filenames
 - `KeychainStore` - macOS Keychain integration (conditional compilation)
@@ -82,6 +82,7 @@ cargo run --bin acp-server  # Run server
 - **Token serialization**: `AgentToken` uses `#[serde(skip_serializing)]` on the `token` field to prevent accidental exposure in JSON responses
 - **Token field access**: `AgentToken.token` is a public field (not a method) - access via `token.token.clone()` not `token.token()`
 - **Boa 0.19 API**: When using Boa engine, must import `JsArgs` trait for `.get_or_undefined()`, use `JsString::from()` for string literals in API calls, import `base64::Engine` trait for `.encode()` method on BASE64_STANDARD
+- **Boa closures with state**: `NativeFunction::from_fn_ptr()` only accepts pure function pointers, not closures that capture variables. To maintain state, use JavaScript globals or context properties instead. Example: Store logs in `__acp_logs` JavaScript array rather than Rust Rc<RefCell<Vec<String>>>
 - **KeychainStore.list() limitation**: Returns empty vec due to security-framework API limitations. FileStore provides full list() functionality.
 - **Storage key encoding**: FileStore uses base64url encoding for filenames to handle colons and slashes in keys safely across filesystems
 - **rcgen 0.13 signing**: To sign certificates, recreate CA `CertificateParams` with same DN/settings, call `self_signed(&ca_key_pair)` to get `Certificate` object, then use that to sign new certs with `params.signed_by(&key_pair, &ca_cert, &ca_key_pair)`
@@ -90,4 +91,5 @@ cargo run --bin acp-server  # Run server
 - **Axum authentication**: Custom extractors using `FromRequest` with request body are complex in Axum 0.7. Simpler to use helper functions that take `Bytes` parameter and verify authentication manually in each handler.
 - **Argon2 password hashing**: Client sends SHA512(password), server stores Argon2(SHA512(password)). Verification uses `Argon2::default().verify_password()` with client's SHA512 hash against stored Argon2 hash.
 - **PluginRuntime single-context limitation**: Loading a plugin overwrites the global `plugin` object in the JS context. Only the most recently loaded plugin's transform function can be executed. Plugin metadata (name, patterns, schema) is preserved for all loaded plugins.
+- **PluginRuntime timeout limitation**: `execute_transform_with_timeout()` cannot interrupt tight infinite loops in JavaScript (Boa limitation). It measures elapsed time after execution completes, so only catches slow operations that eventually finish.
 - **Environment variable test isolation**: Tests modifying environment variables must use a static Mutex to serialize execution and an RAII guard to ensure cleanup, as env vars are process-global and tests run in parallel.
