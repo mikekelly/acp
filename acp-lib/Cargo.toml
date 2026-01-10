@@ -12,6 +12,19 @@ serde_json.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+boa_engine = "0.19"
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+hex = "0.4"
+rcgen.workspace = true
+time.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3.13"

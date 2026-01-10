@@ -27,6 +27,7 @@ cargo run --bin acp-server  # Run server
 - `AgentToken` - Bearer token for agent authentication
 - `Config` - Runtime configuration
 - `AcpError` - Unified error type with context helpers
+- `PluginRuntime` - Sandboxed Boa JS runtime with ACP.crypto, ACP.util, TextEncoder/TextDecoder
 
 ## Patterns
 - **Wildcard host matching**: `*.example.com` matches `sub.example.com` but NOT `a.b.example.com` (single-level only)
@@ -36,3 +37,4 @@ cargo run --bin acp-server  # Run server
 ## Gotchas
 - **Wildcard matching is single-level only**: The pattern `*.s3.amazonaws.com` matches `bucket.s3.amazonaws.com` but rejects both `s3.amazonaws.com` (no subdomain) and `evil.com.s3.amazonaws.com` (multiple levels)
 - **Token serialization**: `AgentToken` uses `#[serde(skip_serializing)]` on the `token` field to prevent accidental exposure in JSON responses
+- **Boa 0.19 API**: When using Boa engine, must import `JsArgs` trait for `.get_or_undefined()`, use `JsString::from()` for string literals in API calls, import `base64::Engine` trait for `.encode()` method on BASE64_STANDARD
