@@ -595,13 +595,15 @@ impl PluginRuntime {
     /// Extract plugin metadata from the JavaScript context
     ///
     /// Reads the `plugin` object from the JS context and validates its structure.
+    /// The plugin is identified by the canonical name (e.g., GitHub path) passed in,
+    /// NOT by the internal `name` field in the plugin code.
     ///
     /// # Arguments
-    /// * `expected_name` - Expected plugin name for validation
+    /// * `canonical_name` - The canonical plugin identifier (e.g., "mikekelly/exa-acp")
     ///
     /// # Returns
     /// ACPPlugin with extracted metadata
-    pub fn extract_plugin_metadata(&mut self, expected_name: &str) -> Result<ACPPlugin> {
+    pub fn extract_plugin_metadata(&mut self, canonical_name: &str) -> Result<ACPPlugin> {
         // Get the plugin object from global scope
         let global = self.context.global_object();
         let plugin_key = JsString::from("plugin");
@@ -611,20 +613,15 @@ impl PluginRuntime {
         let plugin_obj = plugin_obj.as_object()
             .ok_or_else(|| AcpError::plugin("plugin is not an object"))?;
 
-        // Extract name
+        // Verify the internal name field exists (for validation, but we don't use it)
         let name_value = plugin_obj.get(JsString::from("name"), &mut self.context)
             .map_err(|e| AcpError::plugin(format!("Failed to get plugin.name: {}", e)))?;
-        let name = name_value.as_string()
+        let _internal_name = name_value.as_string()
             .ok_or_else(|| AcpError::plugin("plugin.name is not a string"))?
             .to_std_string_escaped();
 
-        // Validate name matches expected
-        if name != expected_name {
-            return Err(AcpError::plugin(format!(
-                "Plugin name mismatch: expected '{}', got '{}'",
-                expected_name, name
-            )));
-        }
+        // Use the canonical name (e.g., GitHub path) as the plugin identifier
+        let name = canonical_name.to_string();
 
         // Extract matchPatterns (array of strings)
         let patterns_value = plugin_obj.get(JsString::from("matchPatterns"), &mut self.context)
@@ -1141,12 +1138,13 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_plugin_metadata_name_mismatch() {
+    fn test_extract_plugin_metadata_uses_github_path() {
+        // Test that plugins are identified by GitHub path, not internal name
         let mut runtime = PluginRuntime::new().unwrap();
 
         let plugin_code = r#"
         var plugin = {
-            name: "actual-name",
+            name: "exa-acp",
             matchPatterns: [],
             credentialSchema: [],
             transform: function(request, credentials) { return request; }
@@ -1154,10 +1152,14 @@ mod tests {
         "#;
 
         runtime.execute(plugin_code).unwrap();
-        let result = runtime.extract_plugin_metadata("expected-name");
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("name mismatch"));
+        // Should succeed even though internal name is "exa-acp" but we're using GitHub path
+        let result = runtime.extract_plugin_metadata("mikekelly/exa-acp");
+
+        assert!(result.is_ok());
+        let plugin = result.unwrap();
+        // The plugin name should be the GitHub path, not the internal name
+        assert_eq!(plugin.name, "mikekelly/exa-acp");
     }
 
     #[test]
