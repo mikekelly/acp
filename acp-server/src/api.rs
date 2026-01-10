@@ -12,7 +12,7 @@ use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     async_trait,
     body::Bytes,
-    extract::{FromRequest, FromRequestParts, Path, Request, State},
+    extract::{FromRequestParts, Path, State},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
@@ -20,7 +20,6 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha512};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -98,8 +97,8 @@ where
     type Rejection = (StatusCode, String);
 
     async fn from_request_parts(
-        parts: &mut Parts,
-        state: &ApiState,
+        _parts: &mut Parts,
+        _state: &ApiState,
     ) -> Result<Self, Self::Rejection> {
         // For now, this is a placeholder - actual auth will be done in handlers
         // that have access to the request body
@@ -165,7 +164,7 @@ pub struct CreateTokenRequest {
 }
 
 /// Token response (includes full token only on creation)
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TokenResponse {
     pub id: String,
     pub name: String,
@@ -204,6 +203,18 @@ pub struct ActivityResponse {
     pub entries: Vec<ActivityEntry>,
 }
 
+/// Init request
+#[derive(Debug, Deserialize)]
+pub struct InitRequest {
+    pub ca_path: Option<String>,
+}
+
+/// Init response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InitResponse {
+    pub ca_path: String,
+}
+
 /// API error response
 #[derive(Debug, Serialize)]
 pub struct ApiError {
@@ -220,14 +231,16 @@ impl IntoResponse for ApiError {
 pub fn create_router(state: ApiState) -> Router {
     Router::new()
         .route("/status", get(get_status))
-        .route("/plugins", get(get_plugins))
-        .route("/tokens", get(get_tokens).post(create_token))
+        .route("/init", post(init))
+        .route("/plugins", get(get_plugins).post(post_plugins))
+        .route("/tokens", get(list_tokens).post(post_list_tokens))
+        .route("/tokens/create", post(create_token))
         .route("/tokens/:id", delete(delete_token))
         .route(
             "/credentials/:plugin/:key",
             post(set_credential).delete(delete_credential),
         )
-        .route("/activity", get(get_activity))
+        .route("/activity", get(get_activity).post(post_activity))
         .with_state(state)
 }
 
@@ -243,6 +256,76 @@ async fn get_status(State(state): State<ApiState>) -> Json<StatusResponse> {
     })
 }
 
+/// POST /init - Initialize server with password and CA (no auth required initially)
+async fn init(
+    State(state): State<ApiState>,
+    body: Bytes,
+) -> Result<Json<InitResponse>, (StatusCode, String)> {
+    use acp_lib::storage::create_store;
+    use acp_lib::tls::CertificateAuthority;
+    use argon2::password_hash::{rand_core::OsRng, SaltString};
+    use argon2::{Argon2, PasswordHasher};
+
+    // Check if already initialized
+    {
+        let hash = state.password_hash.read().await;
+        if hash.is_some() {
+            return Err((StatusCode::CONFLICT, "Server already initialized".to_string()));
+        }
+    }
+
+    // Parse request
+    let req: AuthenticatedRequest<InitRequest> = serde_json::from_slice(&body)
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid JSON: {}", e)))?;
+
+    // Hash the password_hash with Argon2 (password_hash is already SHA512 from client)
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let password_hash = argon2
+        .hash_password(req.password_hash.as_bytes(), &salt)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to hash password: {}", e)))?
+        .to_string();
+
+    // Store password hash
+    state.set_password_hash(password_hash).await;
+
+    // Generate CA
+    let ca = CertificateAuthority::generate()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate CA: {}", e)))?;
+
+    // Store CA private key in SecretStore
+    let store = create_store(None)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create store: {}", e)))?;
+
+    store
+        .set("ca:private_key", ca.ca_key_pem().as_bytes())
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store CA key: {}", e)))?;
+
+    // Determine CA certificate path
+    let ca_path = if let Some(path) = req.data.ca_path {
+        path
+    } else {
+        // Default to ~/.config/acp/ca.crt
+        let home = std::env::var("HOME")
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "HOME env var not set".to_string()))?;
+        format!("{}/.config/acp/ca.crt", home)
+    };
+
+    // Export CA certificate to filesystem
+    let ca_dir = std::path::Path::new(&ca_path).parent()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "Invalid CA path".to_string()))?;
+
+    std::fs::create_dir_all(ca_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create CA directory: {}", e)))?;
+
+    std::fs::write(&ca_path, ca.ca_cert_pem())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write CA cert: {}", e)))?;
+
+    Ok(Json(InitResponse { ca_path }))
+}
+
 /// GET /plugins - List installed plugins (requires auth)
 async fn get_plugins(
     State(state): State<ApiState>,
@@ -256,8 +339,16 @@ async fn get_plugins(
     }))
 }
 
+/// POST /plugins - List installed plugins (requires auth, same as GET)
+async fn post_plugins(
+    State(state): State<ApiState>,
+    body: Bytes,
+) -> Result<Json<PluginsResponse>, (StatusCode, String)> {
+    get_plugins(State(state), body).await
+}
+
 /// GET /tokens - List agent tokens (requires auth)
-async fn get_tokens(
+async fn list_tokens(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<TokensResponse>, (StatusCode, String)> {
@@ -269,7 +360,15 @@ async fn get_tokens(
     Ok(Json(TokensResponse { tokens: token_list }))
 }
 
-/// POST /tokens - Create new agent token (requires auth)
+/// POST /tokens - List agent tokens (requires auth, same as GET)
+async fn post_list_tokens(
+    State(state): State<ApiState>,
+    body: Bytes,
+) -> Result<Json<TokensResponse>, (StatusCode, String)> {
+    list_tokens(State(state), body).await
+}
+
+/// POST /tokens/create - Create new agent token (requires auth)
 async fn create_token(
     State(state): State<ApiState>,
     body: Bytes,
@@ -348,6 +447,14 @@ async fn get_activity(
     }))
 }
 
+/// POST /activity - Get recent activity (requires auth, same as GET)
+async fn post_activity(
+    State(state): State<ApiState>,
+    body: Bytes,
+) -> Result<Json<ActivityResponse>, (StatusCode, String)> {
+    get_activity(State(state), body).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,5 +503,197 @@ mod tests {
         let deserialized: StatusResponse = serde_json::from_str(&json).unwrap();
 
         assert_eq!(status, deserialized);
+    }
+
+    #[tokio::test]
+    async fn test_post_plugins_endpoint() {
+        use argon2::password_hash::{rand_core::OsRng, SaltString};
+        use argon2::{Argon2, PasswordHasher};
+
+        let state = ApiState::new(9443, 9080);
+
+        // Set up password hash
+        let password = "testpass123";
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt).unwrap().to_string();
+        state.set_password_hash(password_hash).await;
+
+        let app = create_router(state);
+
+        // Create auth request body
+        let body = serde_json::json!({
+            "password_hash": password
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/plugins")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_post_tokens_list_endpoint() {
+        use argon2::password_hash::{rand_core::OsRng, SaltString};
+        use argon2::{Argon2, PasswordHasher};
+
+        let state = ApiState::new(9443, 9080);
+
+        // Set up password hash
+        let password = "testpass123";
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt).unwrap().to_string();
+        state.set_password_hash(password_hash).await;
+
+        let app = create_router(state);
+
+        // Create auth request body
+        let body = serde_json::json!({
+            "password_hash": password
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/tokens")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_post_tokens_create_endpoint() {
+        use argon2::password_hash::{rand_core::OsRng, SaltString};
+        use argon2::{Argon2, PasswordHasher};
+
+        let state = ApiState::new(9443, 9080);
+
+        // Set up password hash
+        let password = "testpass123";
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt).unwrap().to_string();
+        state.set_password_hash(password_hash).await;
+
+        let app = create_router(state);
+
+        // Create auth request body with name
+        let body = serde_json::json!({
+            "password_hash": password,
+            "name": "test-token"
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/tokens/create")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let token_response: TokenResponse = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(token_response.name, "test-token");
+        assert!(token_response.token.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_post_activity_endpoint() {
+        use argon2::password_hash::{rand_core::OsRng, SaltString};
+        use argon2::{Argon2, PasswordHasher};
+
+        let state = ApiState::new(9443, 9080);
+
+        // Set up password hash
+        let password = "testpass123";
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt).unwrap().to_string();
+        state.set_password_hash(password_hash).await;
+
+        let app = create_router(state);
+
+        // Create auth request body
+        let body = serde_json::json!({
+            "password_hash": password
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/activity")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_init_endpoint() {
+        let state = ApiState::new(9443, 9080);
+        let app = create_router(state.clone());
+
+        let password = "testpass123";
+
+        // Create init request body
+        let body = serde_json::json!({
+            "password_hash": password
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/init")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let init_response: InitResponse = serde_json::from_slice(&body_bytes).unwrap();
+
+        // Should return a CA path
+        assert!(!init_response.ca_path.is_empty());
+
+        // Password hash should be set in state
+        let hash = state.password_hash.read().await;
+        assert!(hash.is_some());
     }
 }
