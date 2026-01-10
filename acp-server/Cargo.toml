@@ -25,6 +25,7 @@ serde_json.workspace = true
 argon2.workspace = true
 sha2 = "0.10"
 chrono.workspace = true
+reqwest.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

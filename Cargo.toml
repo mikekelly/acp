@@ -24,10 +24,11 @@ async-trait = "0.1"
 rcgen = "0.13"
 time = { version = "0.3", features = ["macros"] }
 security-framework = "2.11"
-axum = "0.7"
+axum = { version = "0.7", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
 argon2 = { version = "0.5", features = ["std"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 
 # Our own crates
 acp-lib = { path = "acp-lib" }
