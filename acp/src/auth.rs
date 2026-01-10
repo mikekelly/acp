@@ -4,7 +4,13 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha512};
 
 /// Read password from stdin without echoing
+/// If ACP_PASSWORD environment variable is set, returns that value instead
+/// This allows automated testing and scripting without terminal prompts
 pub fn read_password(prompt: &str) -> Result<String> {
+    // Check for test password in environment first
+    if let Ok(password) = std::env::var("ACP_PASSWORD") {
+        return Ok(password);
+    }
     rpassword::prompt_password(prompt).context("Failed to read password")
 }
 
@@ -31,6 +37,7 @@ pub fn hash_password(password: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     #[test]
     fn test_hash_password_deterministic() {
@@ -58,5 +65,48 @@ mod tests {
         let hash = hash_password("test");
         // Should only contain hex characters
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // Mutex to serialize tests that modify ACP_PASSWORD environment variable
+    // Required because environment variables are process-global
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    // Helper to ensure environment variable cleanup with RAII pattern
+    struct EnvGuard(&'static str);
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var(self.0);
+        }
+    }
+
+    #[test]
+    fn test_read_password_from_env_variable() {
+        // Lock to prevent parallel execution with other env var tests
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard("ACP_PASSWORD");
+
+        let test_password = "testpass123";
+        std::env::set_var("ACP_PASSWORD", test_password);
+
+        // Should read from environment variable without prompting
+        let result = read_password("Enter password: ");
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), test_password);
+    }
+
+    #[test]
+    fn test_read_password_env_empty_string() {
+        // Lock to prevent parallel execution with other env var tests
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard("ACP_PASSWORD");
+
+        // Even an empty password should work if explicitly set
+        std::env::set_var("ACP_PASSWORD", "");
+
+        let result = read_password("Enter password: ");
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "");
     }
 }
