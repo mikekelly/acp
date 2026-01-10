@@ -16,6 +16,7 @@ use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::time::Duration;
 
 /// JavaScript runtime for plugin execution
 pub struct PluginRuntime {
@@ -28,11 +29,14 @@ impl PluginRuntime {
     pub fn new() -> Result<Self> {
         let mut context = Context::default();
 
-        // Set up ACP global object
+        // Set up ACP global object (including log functionality)
         Self::setup_acp_globals(&mut context)?;
 
         // Set up TextEncoder/TextDecoder
         Self::setup_text_encoding(&mut context)?;
+
+        // Set up URL and URLSearchParams
+        Self::setup_url_apis(&mut context)?;
 
         // Apply sandbox restrictions
         Self::apply_sandbox(&mut context)?;
@@ -55,8 +59,9 @@ impl PluginRuntime {
         // Register native functions first
         Self::register_crypto_natives(context)?;
         Self::register_util_natives(context)?;
+        Self::register_log_native(context)?;
 
-        // Create ACP namespace with crypto and util methods
+        // Create ACP namespace with crypto, util, and log methods
         let setup_code = r#"
         var ACP = {
             crypto: {
@@ -92,6 +97,9 @@ impl PluginRuntime {
                 amzDate: function(timestamp) {
                     return __acp_native_amz_date(timestamp);
                 }
+            },
+            log: function(msg) {
+                __acp_native_log(msg);
             }
         };
         "#;
@@ -292,6 +300,76 @@ impl PluginRuntime {
         Ok(())
     }
 
+    /// Register native log function for ACP.log
+    fn register_log_native(context: &mut Context) -> Result<()> {
+        // Create a JavaScript array to store logs
+        let setup_log_code = r#"
+        var __acp_logs = [];
+        function __acp_native_log(msg) {
+            // Convert to string
+            var str;
+            if (typeof msg === 'string') {
+                str = msg;
+            } else if (typeof msg === 'number') {
+                str = String(msg);
+            } else if (typeof msg === 'boolean') {
+                str = String(msg);
+            } else if (msg === null) {
+                str = 'null';
+            } else if (msg === undefined) {
+                str = 'undefined';
+            } else {
+                // For objects, try JSON.stringify
+                try {
+                    str = JSON.stringify(msg);
+                } catch (e) {
+                    str = String(msg);
+                }
+            }
+            __acp_logs.push(str);
+        }
+        "#;
+
+        context.eval(Source::from_bytes(setup_log_code))
+            .map_err(|e| AcpError::plugin(format!("Failed to create log function: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get all captured log messages
+    pub fn get_logs(&mut self) -> Vec<String> {
+        // Access the JavaScript __acp_logs array
+        let global = self.context.global_object();
+        let logs_value = global.get(JsString::from("__acp_logs"), &mut self.context)
+            .unwrap_or(JsValue::undefined());
+
+        if let Some(logs_obj) = logs_value.as_object() {
+            let length_value = logs_obj.get(JsString::from("length"), &mut self.context)
+                .unwrap_or(JsValue::from(0));
+
+            if let Some(length) = length_value.as_number() {
+                let len = length as usize;
+                let mut result = Vec::new();
+                for i in 0..len {
+                    if let Ok(elem) = logs_obj.get(i, &mut self.context) {
+                        if let Some(s) = elem.as_string() {
+                            result.push(s.to_std_string_escaped());
+                        }
+                    }
+                }
+                return result;
+            }
+        }
+
+        Vec::new()
+    }
+
+    /// Clear all captured log messages
+    pub fn clear_logs(&mut self) {
+        // Clear the JavaScript __acp_logs array
+        let _ = self.context.eval(Source::from_bytes("__acp_logs = [];"));
+    }
+
     /// Set up TextEncoder and TextDecoder
     fn setup_text_encoding(context: &mut Context) -> Result<()> {
         // Register native encode/decode functions
@@ -342,6 +420,93 @@ impl PluginRuntime {
         "#;
         context.eval(Source::from_bytes(text_code))
             .map_err(|e| AcpError::plugin(format!("Failed to create TextEncoder/TextDecoder: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Set up URL and URLSearchParams global objects
+    ///
+    /// Provides pure JavaScript implementations for URL parsing and manipulation.
+    fn setup_url_apis(context: &mut Context) -> Result<()> {
+        let url_code = r#"
+        function URLSearchParams(init) {
+            this.params = {};
+
+            if (typeof init === 'string') {
+                if (init.startsWith('?')) {
+                    init = init.substring(1);
+                }
+                if (init) {
+                    var pairs = init.split('&');
+                    for (var i = 0; i < pairs.length; i++) {
+                        var pair = pairs[i].split('=');
+                        var key = decodeURIComponent(pair[0]);
+                        var value = pair[1] ? decodeURIComponent(pair[1]) : '';
+                        this.params[key] = value;
+                    }
+                }
+            }
+        }
+
+        URLSearchParams.prototype.get = function(name) {
+            return this.params[name] || null;
+        };
+
+        URLSearchParams.prototype.set = function(name, value) {
+            this.params[name] = String(value);
+        };
+
+        URLSearchParams.prototype.has = function(name) {
+            return this.params.hasOwnProperty(name);
+        };
+
+        URLSearchParams.prototype.delete = function(name) {
+            delete this.params[name];
+        };
+
+        URLSearchParams.prototype.toString = function() {
+            var parts = [];
+            for (var key in this.params) {
+                if (this.params.hasOwnProperty(key)) {
+                    parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(this.params[key]));
+                }
+            }
+            return parts.join('&');
+        };
+
+        function URL(urlString) {
+            // Simple regex-based URL parser
+            var match = urlString.match(/^(([^:/?#]+):)?(\/\/([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?/);
+
+            this.protocol = match[2] ? match[2] + ':' : '';
+            this.hostname = '';
+            this.port = '';
+            this.pathname = match[5] || '/';
+            this.search = match[6] || '';
+            this.hash = match[8] ? '#' + match[9] : '';
+
+            // Parse host:port
+            if (match[4]) {
+                var hostPort = match[4].split(':');
+                this.hostname = hostPort[0];
+                this.port = hostPort[1] || '';
+            }
+
+            this.host = this.port ? this.hostname + ':' + this.port : this.hostname;
+            this.origin = this.protocol + '//' + this.host;
+            this.href = urlString;
+
+            // Parse search params
+            this.searchParams = new URLSearchParams(this.search);
+        }
+
+        URL.prototype.toString = function() {
+            return this.href;
+        };
+        "#;
+
+        context.eval(Source::from_bytes(url_code))
+            .map_err(|e| AcpError::plugin(format!("Failed to create URL/URLSearchParams: {}", e)))?;
 
         Ok(())
     }
@@ -552,6 +717,45 @@ impl PluginRuntime {
 
         // Convert result back to ACPRequest
         self.js_to_request(&result)
+    }
+
+    /// Execute a plugin's transform function with timeout protection
+    ///
+    /// This wraps execute_transform with a timeout to prevent runaway plugins.
+    /// Note: Boa cannot interrupt tight infinite loops, but this catches slow operations.
+    ///
+    /// # Arguments
+    /// * `plugin_name` - Name of the plugin to execute
+    /// * `request` - The HTTP request to transform
+    /// * `credentials` - Plugin credentials
+    /// * `timeout` - Maximum duration to allow for execution
+    ///
+    /// # Returns
+    /// The transformed request, or an error if timeout is exceeded
+    pub async fn execute_transform_with_timeout(
+        &mut self,
+        plugin_name: &str,
+        request: ACPRequest,
+        credentials: &ACPCredentials,
+        timeout: Duration,
+    ) -> Result<ACPRequest> {
+        use std::time::Instant;
+
+        let start = Instant::now();
+
+        // Execute the transform (this is synchronous but we can check elapsed time)
+        let result = self.execute_transform(plugin_name, request, credentials)?;
+
+        // Check if we exceeded the timeout
+        if start.elapsed() > timeout {
+            return Err(AcpError::plugin(format!(
+                "Plugin execution timeout exceeded: {:?} > {:?}",
+                start.elapsed(),
+                timeout
+            )));
+        }
+
+        Ok(result)
     }
 
     /// Convert ACPRequest to JavaScript object
@@ -1092,5 +1296,193 @@ mod tests {
 
         let result2 = runtime.execute("testCreds.region").unwrap();
         assert_eq!(result2.as_string().unwrap().to_std_string_escaped(), "us-west-2");
+    }
+
+    // Tests for ACP.log function
+    #[test]
+    fn test_acp_log_exists() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        assert!(runtime.execute("typeof ACP.log").unwrap().as_string().unwrap().to_std_string_escaped() == "function");
+    }
+
+    #[test]
+    fn test_acp_log_captures_messages() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        runtime.execute("ACP.log('hello')").unwrap();
+        runtime.execute("ACP.log('world')").unwrap();
+
+        let logs = runtime.get_logs();
+        assert_eq!(logs.len(), 2);
+        assert_eq!(logs[0], "hello");
+        assert_eq!(logs[1], "world");
+    }
+
+    #[test]
+    fn test_acp_log_clear() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        runtime.execute("ACP.log('test1')").unwrap();
+        runtime.execute("ACP.log('test2')").unwrap();
+
+        assert_eq!(runtime.get_logs().len(), 2);
+
+        runtime.clear_logs();
+        assert_eq!(runtime.get_logs().len(), 0);
+    }
+
+    #[test]
+    fn test_acp_log_converts_types() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        runtime.execute("ACP.log(123)").unwrap();
+        runtime.execute("ACP.log(true)").unwrap();
+        runtime.execute("ACP.log({key: 'value'})").unwrap();
+
+        let logs = runtime.get_logs();
+        assert_eq!(logs.len(), 3);
+        assert_eq!(logs[0], "123");
+        assert_eq!(logs[1], "true");
+        assert!(logs[2].contains("key"));
+    }
+
+    // Tests for URL APIs
+    #[test]
+    fn test_url_exists() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        let result = runtime.execute("typeof URL").unwrap();
+        assert_eq!(result.as_string().unwrap().to_std_string_escaped(), "function");
+    }
+
+    #[test]
+    fn test_url_parsing() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        let result = runtime.execute(r#"
+            var url = new URL('https://example.com:8080/path?key=value#hash');
+            JSON.stringify({
+                protocol: url.protocol,
+                hostname: url.hostname,
+                port: url.port,
+                pathname: url.pathname,
+                search: url.search,
+                hash: url.hash
+            });
+        "#).unwrap();
+
+        let json_str = result.as_string().unwrap().to_std_string_escaped();
+        assert!(json_str.contains("\"protocol\":\"https:\""));
+        assert!(json_str.contains("\"hostname\":\"example.com\""));
+        assert!(json_str.contains("\"port\":\"8080\""));
+        assert!(json_str.contains("\"pathname\":\"/path\""));
+        assert!(json_str.contains("\"search\":\"?key=value\""));
+        assert!(json_str.contains("\"hash\":\"#hash\""));
+    }
+
+    #[test]
+    fn test_url_search_params_exists() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        let result = runtime.execute("typeof URLSearchParams").unwrap();
+        assert_eq!(result.as_string().unwrap().to_std_string_escaped(), "function");
+    }
+
+    #[test]
+    fn test_url_search_params_basic() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        let result = runtime.execute(r#"
+            var params = new URLSearchParams('key1=value1&key2=value2');
+            params.get('key1');
+        "#).unwrap();
+
+        assert_eq!(result.as_string().unwrap().to_std_string_escaped(), "value1");
+    }
+
+    #[test]
+    fn test_url_search_params_set() {
+        let mut runtime = PluginRuntime::new().unwrap();
+        let result = runtime.execute(r#"
+            var params = new URLSearchParams();
+            params.set('foo', 'bar');
+            params.toString();
+        "#).unwrap();
+
+        assert_eq!(result.as_string().unwrap().to_std_string_escaped(), "foo=bar");
+    }
+
+    // Tests for timeout wrapper
+    #[tokio::test]
+    async fn test_execute_transform_with_timeout_success() {
+        use std::time::Duration;
+
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        // Load a fast plugin
+        let plugin_code = r#"
+        var plugin = {
+            name: "fast-plugin",
+            matchPatterns: ["api.example.com"],
+            credentialSchema: [],
+            transform: function(request, credentials) {
+                request.headers["X-Fast"] = "true";
+                return request;
+            }
+        };
+        "#;
+
+        runtime.execute(plugin_code).unwrap();
+        let plugin = runtime.extract_plugin_metadata("fast-plugin").unwrap();
+        runtime.plugins.insert(plugin.name.clone(), plugin);
+
+        let request = ACPRequest::new("GET", "https://api.example.com/test");
+
+        let result = runtime.execute_transform_with_timeout(
+            "fast-plugin",
+            request,
+            &ACPCredentials::new(),
+            Duration::from_secs(5)
+        ).await;
+
+        assert!(result.is_ok());
+        let transformed = result.unwrap();
+        assert_eq!(transformed.get_header("X-Fast"), Some(&"true".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_execute_transform_with_timeout_slow_operation() {
+        use std::time::Duration;
+
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        // Load a slow plugin (using busy loop)
+        let plugin_code = r#"
+        var plugin = {
+            name: "slow-plugin",
+            matchPatterns: ["api.example.com"],
+            credentialSchema: [],
+            transform: function(request, credentials) {
+                // Busy loop for a while
+                var start = ACP.util.now();
+                while (ACP.util.now() - start < 100) {
+                    // Spin
+                }
+                request.headers["X-Slow"] = "true";
+                return request;
+            }
+        };
+        "#;
+
+        runtime.execute(plugin_code).unwrap();
+        let plugin = runtime.extract_plugin_metadata("slow-plugin").unwrap();
+        runtime.plugins.insert(plugin.name.clone(), plugin);
+
+        let request = ACPRequest::new("GET", "https://api.example.com/test");
+
+        // Use a very short timeout to catch the slow operation
+        let result = runtime.execute_transform_with_timeout(
+            "slow-plugin",
+            request,
+            &ACPCredentials::new(),
+            Duration::from_millis(10)
+        ).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("timeout") || err.to_string().contains("Timeout"));
     }
 }
