@@ -7,16 +7,20 @@
 //! - TextEncoder/TextDecoder
 //! - Sandbox restrictions (no fetch, eval, etc.)
 
+use crate::storage::SecretStore;
+use crate::types::{ACPCredentials, ACPPlugin, ACPRequest};
 use crate::{AcpError, Result};
 use base64::Engine;
 use boa_engine::{Context, JsArgs, JsNativeError, JsResult, JsString, JsValue, NativeFunction, Source};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 /// JavaScript runtime for plugin execution
 pub struct PluginRuntime {
     context: Context,
+    plugins: HashMap<String, ACPPlugin>,
 }
 
 impl PluginRuntime {
@@ -33,7 +37,10 @@ impl PluginRuntime {
         // Apply sandbox restrictions
         Self::apply_sandbox(&mut context)?;
 
-        Ok(Self { context })
+        Ok(Self {
+            context,
+            plugins: HashMap::new(),
+        })
     }
 
     /// Execute JavaScript code in the runtime
@@ -372,6 +379,312 @@ impl PluginRuntime {
 
         Ok(())
     }
+
+    /// Load a plugin from the SecretStore and execute it
+    ///
+    /// Loads the plugin JavaScript code from the store (key: `plugin:{name}`),
+    /// executes it, and extracts the plugin metadata object.
+    ///
+    /// # Arguments
+    /// * `name` - Plugin name to load
+    /// * `store` - SecretStore to retrieve plugin code from
+    ///
+    /// # Returns
+    /// The loaded ACPPlugin with metadata
+    pub async fn load_plugin<S: SecretStore>(&mut self, name: &str, store: &S) -> Result<ACPPlugin> {
+        // Retrieve plugin code from store
+        let key = format!("plugin:{}", name);
+        let code = store.get(&key).await?
+            .ok_or_else(|| AcpError::plugin(format!("Plugin '{}' not found in store", name)))?;
+
+        let code_str = String::from_utf8(code)
+            .map_err(|e| AcpError::plugin(format!("Plugin code is not valid UTF-8: {}", e)))?;
+
+        // Execute the plugin code
+        self.execute(&code_str)?;
+
+        // Extract metadata
+        let plugin = self.extract_plugin_metadata(name)?;
+
+        // Cache the plugin
+        self.plugins.insert(name.to_string(), plugin.clone());
+
+        Ok(plugin)
+    }
+
+    /// Extract plugin metadata from the JavaScript context
+    ///
+    /// Reads the `plugin` object from the JS context and validates its structure.
+    ///
+    /// # Arguments
+    /// * `expected_name` - Expected plugin name for validation
+    ///
+    /// # Returns
+    /// ACPPlugin with extracted metadata
+    pub fn extract_plugin_metadata(&mut self, expected_name: &str) -> Result<ACPPlugin> {
+        // Get the plugin object from global scope
+        let global = self.context.global_object();
+        let plugin_key = JsString::from("plugin");
+        let plugin_obj = global.get(plugin_key, &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get plugin object: {}", e)))?;
+
+        let plugin_obj = plugin_obj.as_object()
+            .ok_or_else(|| AcpError::plugin("plugin is not an object"))?;
+
+        // Extract name
+        let name_value = plugin_obj.get(JsString::from("name"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.name: {}", e)))?;
+        let name = name_value.as_string()
+            .ok_or_else(|| AcpError::plugin("plugin.name is not a string"))?
+            .to_std_string_escaped();
+
+        // Validate name matches expected
+        if name != expected_name {
+            return Err(AcpError::plugin(format!(
+                "Plugin name mismatch: expected '{}', got '{}'",
+                expected_name, name
+            )));
+        }
+
+        // Extract matchPatterns (array of strings)
+        let patterns_value = plugin_obj.get(JsString::from("matchPatterns"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.matchPatterns: {}", e)))?;
+        let patterns_obj = patterns_value.as_object()
+            .ok_or_else(|| AcpError::plugin("plugin.matchPatterns is not an array"))?;
+
+        let mut match_patterns = Vec::new();
+        let length_value = patterns_obj.get(JsString::from("length"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get matchPatterns.length: {}", e)))?;
+        let length = length_value.as_number()
+            .ok_or_else(|| AcpError::plugin("matchPatterns.length is not a number"))? as usize;
+
+        for i in 0..length {
+            let elem = patterns_obj.get(i, &mut self.context)
+                .map_err(|e| AcpError::plugin(format!("Failed to get matchPatterns[{}]: {}", i, e)))?;
+            let pattern = elem.as_string()
+                .ok_or_else(|| AcpError::plugin(format!("matchPatterns[{}] is not a string", i)))?
+                .to_std_string_escaped();
+            match_patterns.push(pattern);
+        }
+
+        // Extract credentialSchema (array of strings)
+        let schema_value = plugin_obj.get(JsString::from("credentialSchema"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.credentialSchema: {}", e)))?;
+        let schema_obj = schema_value.as_object()
+            .ok_or_else(|| AcpError::plugin("plugin.credentialSchema is not an array"))?;
+
+        let mut credential_schema = Vec::new();
+        let schema_length_value = schema_obj.get(JsString::from("length"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get credentialSchema.length: {}", e)))?;
+        let schema_length = schema_length_value.as_number()
+            .ok_or_else(|| AcpError::plugin("credentialSchema.length is not a number"))? as usize;
+
+        for i in 0..schema_length {
+            let elem = schema_obj.get(i, &mut self.context)
+                .map_err(|e| AcpError::plugin(format!("Failed to get credentialSchema[{}]: {}", i, e)))?;
+            let key = elem.as_string()
+                .ok_or_else(|| AcpError::plugin(format!("credentialSchema[{}] is not a string", i)))?
+                .to_std_string_escaped();
+            credential_schema.push(key);
+        }
+
+        // Verify transform function exists
+        let transform_value = plugin_obj.get(JsString::from("transform"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.transform: {}", e)))?;
+        let _transform_fn = transform_value.as_callable()
+            .ok_or_else(|| AcpError::plugin("plugin.transform is not a function"))?;
+
+        // For the transform field, we store a placeholder since the actual function
+        // is in the JS context and will be called directly
+        let transform = "function transform(request, credentials) { /* loaded from store */ }".to_string();
+
+        Ok(ACPPlugin {
+            name,
+            match_patterns,
+            credential_schema,
+            transform,
+        })
+    }
+
+    /// Execute a plugin's transform function
+    ///
+    /// # Arguments
+    /// * `plugin_name` - Name of the plugin to execute
+    /// * `request` - The HTTP request to transform
+    /// * `credentials` - Plugin credentials
+    ///
+    /// # Returns
+    /// The transformed request
+    pub fn execute_transform(
+        &mut self,
+        plugin_name: &str,
+        request: ACPRequest,
+        credentials: &ACPCredentials,
+    ) -> Result<ACPRequest> {
+        // Get the plugin
+        let _plugin = self.plugins.get(plugin_name)
+            .ok_or_else(|| AcpError::plugin(format!("Plugin '{}' not loaded", plugin_name)))?;
+
+        // Convert request to JS object
+        let request_js = self.request_to_js(&request)?;
+
+        // Convert credentials to JS object
+        let credentials_js = self.credentials_to_js(credentials)?;
+
+        // Get the plugin.transform function
+        let global = self.context.global_object();
+        let plugin_obj = global.get(JsString::from("plugin"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get plugin object: {}", e)))?;
+        let plugin_obj = plugin_obj.as_object()
+            .ok_or_else(|| AcpError::plugin("plugin is not an object"))?;
+
+        let transform_value = plugin_obj.get(JsString::from("transform"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.transform: {}", e)))?;
+        let transform_fn = transform_value.as_callable()
+            .ok_or_else(|| AcpError::plugin("plugin.transform is not a function"))?;
+
+        // Call transform(request, credentials)
+        let result = transform_fn.call(
+            &JsValue::undefined(),
+            &[request_js, credentials_js],
+            &mut self.context
+        ).map_err(|e| AcpError::plugin(format!("Transform execution error: {}", e)))?;
+
+        // Convert result back to ACPRequest
+        self.js_to_request(&result)
+    }
+
+    /// Convert ACPRequest to JavaScript object
+    fn request_to_js(&mut self, request: &ACPRequest) -> Result<JsValue> {
+        // Create request object
+        let code = format!(
+            r#"(function() {{
+                return {{
+                    method: {},
+                    url: {},
+                    headers: {{}},
+                    body: []
+                }};
+            }})()"#,
+            serde_json::to_string(&request.method).unwrap(),
+            serde_json::to_string(&request.url).unwrap()
+        );
+
+        let obj = self.context.eval(Source::from_bytes(&code))
+            .map_err(|e| AcpError::plugin(format!("Failed to create request object: {}", e)))?;
+
+        let obj_ref = obj.as_object()
+            .ok_or_else(|| AcpError::plugin("Failed to create request object"))?;
+
+        // Set headers
+        let headers_obj = obj_ref.get(JsString::from("headers"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get headers object: {}", e)))?;
+        let headers_obj = headers_obj.as_object()
+            .ok_or_else(|| AcpError::plugin("headers is not an object"))?;
+
+        for (key, value) in &request.headers {
+            headers_obj.set(
+                JsString::from(key.as_str()),
+                JsValue::from(JsString::from(value.as_str())),
+                false,
+                &mut self.context
+            ).map_err(|e| AcpError::plugin(format!("Failed to set header '{}': {}", key, e)))?;
+        }
+
+        // Set body as byte array
+        let body_array = bytes_to_js_array(&request.body, &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to convert body to array: {}", e)))?;
+
+        obj_ref.set(JsString::from("body"), body_array, false, &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to set body: {}", e)))?;
+
+        Ok(obj)
+    }
+
+    /// Convert ACPCredentials to JavaScript object
+    fn credentials_to_js(&mut self, credentials: &ACPCredentials) -> Result<JsValue> {
+        // Create empty object
+        let obj = self.context.eval(Source::from_bytes("({})"))
+            .map_err(|e| AcpError::plugin(format!("Failed to create credentials object: {}", e)))?;
+
+        let obj_ref = obj.as_object()
+            .ok_or_else(|| AcpError::plugin("Failed to create credentials object"))?;
+
+        // Set each credential
+        for (key, value) in &credentials.credentials {
+            obj_ref.set(
+                JsString::from(key.as_str()),
+                JsValue::from(JsString::from(value.as_str())),
+                false,
+                &mut self.context
+            ).map_err(|e| AcpError::plugin(format!("Failed to set credential '{}': {}", key, e)))?;
+        }
+
+        Ok(obj)
+    }
+
+    /// Convert JavaScript object to ACPRequest
+    fn js_to_request(&mut self, value: &JsValue) -> Result<ACPRequest> {
+        let obj = value.as_object()
+            .ok_or_else(|| AcpError::plugin("Transform result is not an object"))?;
+
+        // Extract method
+        let method_value = obj.get(JsString::from("method"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get result.method: {}", e)))?;
+        let method = method_value.as_string()
+            .ok_or_else(|| AcpError::plugin("result.method is not a string"))?
+            .to_std_string_escaped();
+
+        // Extract url
+        let url_value = obj.get(JsString::from("url"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get result.url: {}", e)))?;
+        let url = url_value.as_string()
+            .ok_or_else(|| AcpError::plugin("result.url is not a string"))?
+            .to_std_string_escaped();
+
+        // Extract headers
+        let headers_value = obj.get(JsString::from("headers"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get result.headers: {}", e)))?;
+        let headers_obj = headers_value.as_object()
+            .ok_or_else(|| AcpError::plugin("result.headers is not an object"))?;
+
+        let mut headers = HashMap::new();
+
+        // Iterate over header properties
+        let props = headers_obj.own_property_keys(&mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get header keys: {}", e)))?;
+
+        for prop_key in props {
+            // Get the string representation of the key
+            let key_value = headers_obj.get(prop_key.clone(), &mut self.context)
+                .map_err(|e| AcpError::plugin(format!("Failed to get header value: {}", e)))?;
+
+            // Convert the PropertyKey to string - use the key directly as it should be a string
+            let key = match &prop_key {
+                boa_engine::property::PropertyKey::String(s) => s.to_std_string_escaped(),
+                _ => continue, // Skip non-string keys (symbols, indices)
+            };
+
+            let value = key_value.as_string()
+                .ok_or_else(|| AcpError::plugin(format!("Header '{}' is not a string", key)))?
+                .to_std_string_escaped();
+
+            headers.insert(key, value);
+        }
+
+        // Extract body
+        let body_value = obj.get(JsString::from("body"), &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to get result.body: {}", e)))?;
+        let body = js_value_to_bytes(&body_value, &mut self.context)
+            .map_err(|e| AcpError::plugin(format!("Failed to convert body: {}", e)))?;
+
+        Ok(ACPRequest {
+            method,
+            url,
+            headers,
+            body,
+        })
+    }
 }
 
 impl Default for PluginRuntime {
@@ -549,5 +862,235 @@ mod tests {
         let mut runtime = PluginRuntime::new().unwrap();
         let result = runtime.execute("new Function('return 1')()");
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_load_plugin() {
+        use crate::storage::FileStore;
+
+        let temp_dir = std::env::temp_dir().join(format!("acp_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let store = FileStore::new(temp_dir.clone()).await.unwrap();
+
+        // Create a simple plugin
+        let plugin_code = r#"
+        var plugin = {
+            name: "test-plugin",
+            matchPatterns: ["api.example.com"],
+            credentialSchema: ["api_key"],
+            transform: function(request, credentials) {
+                return request;
+            }
+        };
+        "#;
+
+        store.set("plugin:test-plugin", plugin_code.as_bytes()).await.unwrap();
+
+        let mut runtime = PluginRuntime::new().unwrap();
+        let plugin = runtime.load_plugin("test-plugin", &store).await.unwrap();
+
+        assert_eq!(plugin.name, "test-plugin");
+        assert_eq!(plugin.match_patterns, vec!["api.example.com"]);
+        assert_eq!(plugin.credential_schema, vec!["api_key"]);
+
+        // Cleanup
+        tokio::fs::remove_dir_all(temp_dir).await.ok();
+    }
+
+    #[test]
+    fn test_extract_plugin_metadata() {
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        // Define a plugin in the runtime
+        let plugin_code = r#"
+        var plugin = {
+            name: "test-plugin",
+            matchPatterns: ["*.s3.amazonaws.com", "s3.amazonaws.com"],
+            credentialSchema: ["access_key", "secret_key"],
+            transform: function(request, credentials) {
+                request.headers["Authorization"] = "AWS4-HMAC-SHA256 ...";
+                return request;
+            }
+        };
+        "#;
+
+        runtime.execute(plugin_code).unwrap();
+        let plugin = runtime.extract_plugin_metadata("test-plugin").unwrap();
+
+        assert_eq!(plugin.name, "test-plugin");
+        assert_eq!(plugin.match_patterns, vec!["*.s3.amazonaws.com", "s3.amazonaws.com"]);
+        assert_eq!(plugin.credential_schema, vec!["access_key", "secret_key"]);
+    }
+
+    #[test]
+    fn test_extract_plugin_metadata_name_mismatch() {
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        let plugin_code = r#"
+        var plugin = {
+            name: "actual-name",
+            matchPatterns: [],
+            credentialSchema: [],
+            transform: function(request, credentials) { return request; }
+        };
+        "#;
+
+        runtime.execute(plugin_code).unwrap();
+        let result = runtime.extract_plugin_metadata("expected-name");
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("name mismatch"));
+    }
+
+    #[test]
+    fn test_execute_transform_basic() {
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        // Load a plugin that adds a header
+        let plugin_code = r#"
+        var plugin = {
+            name: "test-plugin",
+            matchPatterns: ["api.example.com"],
+            credentialSchema: ["api_key"],
+            transform: function(request, credentials) {
+                request.headers["X-API-Key"] = credentials.api_key;
+                return request;
+            }
+        };
+        "#;
+
+        runtime.execute(plugin_code).unwrap();
+        let plugin = runtime.extract_plugin_metadata("test-plugin").unwrap();
+        // Manually cache the plugin since we didn't use load_plugin
+        runtime.plugins.insert(plugin.name.clone(), plugin);
+
+        let request = ACPRequest::new("GET", "https://api.example.com/users")
+            .with_header("Content-Type", "application/json");
+
+        let mut credentials = ACPCredentials::new();
+        credentials.set("api_key", "secret123");
+
+        let transformed = runtime.execute_transform("test-plugin", request, &credentials).unwrap();
+
+        assert_eq!(transformed.method, "GET");
+        assert_eq!(transformed.url, "https://api.example.com/users");
+        assert_eq!(transformed.get_header("Content-Type"), Some(&"application/json".to_string()));
+        assert_eq!(transformed.get_header("X-API-Key"), Some(&"secret123".to_string()));
+    }
+
+    #[test]
+    fn test_execute_transform_modifies_request() {
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        // Plugin that modifies method and URL
+        let plugin_code = r#"
+        var plugin = {
+            name: "rewriter",
+            matchPatterns: ["old.example.com"],
+            credentialSchema: [],
+            transform: function(request, credentials) {
+                request.method = "POST";
+                request.url = request.url.replace("old.example.com", "new.example.com");
+                return request;
+            }
+        };
+        "#;
+
+        runtime.execute(plugin_code).unwrap();
+        let plugin = runtime.extract_plugin_metadata("rewriter").unwrap();
+        runtime.plugins.insert(plugin.name.clone(), plugin);
+
+        let request = ACPRequest::new("GET", "https://old.example.com/api");
+
+        let transformed = runtime.execute_transform("rewriter", request, &ACPCredentials::new()).unwrap();
+
+        assert_eq!(transformed.method, "POST");
+        assert_eq!(transformed.url, "https://new.example.com/api");
+    }
+
+    #[test]
+    fn test_execute_transform_with_body() {
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        // Plugin that modifies the body
+        let plugin_code = r#"
+        var plugin = {
+            name: "body-transformer",
+            matchPatterns: ["api.example.com"],
+            credentialSchema: [],
+            transform: function(request, credentials) {
+                // Convert body to string, modify it, convert back
+                var decoder = new TextDecoder();
+                var encoder = new TextEncoder();
+                var bodyStr = decoder.decode(request.body);
+                var modified = bodyStr + " - transformed";
+                request.body = encoder.encode(modified);
+                return request;
+            }
+        };
+        "#;
+
+        runtime.execute(plugin_code).unwrap();
+        let plugin = runtime.extract_plugin_metadata("body-transformer").unwrap();
+        runtime.plugins.insert(plugin.name.clone(), plugin);
+
+        let request = ACPRequest::new("POST", "https://api.example.com/data")
+            .with_body(b"original".to_vec());
+
+        let transformed = runtime.execute_transform("body-transformer", request, &ACPCredentials::new()).unwrap();
+
+        assert_eq!(transformed.body, b"original - transformed");
+    }
+
+    #[test]
+    fn test_execute_transform_plugin_not_loaded() {
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        let request = ACPRequest::new("GET", "https://api.example.com");
+        let result = runtime.execute_transform("nonexistent", request, &ACPCredentials::new());
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not loaded"));
+    }
+
+    #[test]
+    fn test_request_to_js_and_back() {
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        let original = ACPRequest::new("POST", "https://api.example.com/test")
+            .with_header("Content-Type", "application/json")
+            .with_header("Authorization", "Bearer token123")
+            .with_body(b"test body".to_vec());
+
+        let js_value = runtime.request_to_js(&original).unwrap();
+        let roundtrip = runtime.js_to_request(&js_value).unwrap();
+
+        assert_eq!(original.method, roundtrip.method);
+        assert_eq!(original.url, roundtrip.url);
+        assert_eq!(original.headers, roundtrip.headers);
+        assert_eq!(original.body, roundtrip.body);
+    }
+
+    #[test]
+    fn test_credentials_to_js() {
+        let mut runtime = PluginRuntime::new().unwrap();
+
+        let mut credentials = ACPCredentials::new();
+        credentials.set("api_key", "secret123");
+        credentials.set("region", "us-west-2");
+
+        let js_value = runtime.credentials_to_js(&credentials).unwrap();
+
+        // Verify we can access the credentials in JS
+        runtime.context.register_global_property(
+            JsString::from("testCreds"),
+            js_value,
+            boa_engine::property::Attribute::all()
+        ).unwrap();
+
+        let result = runtime.execute("testCreds.api_key").unwrap();
+        assert_eq!(result.as_string().unwrap().to_std_string_escaped(), "secret123");
+
+        let result2 = runtime.execute("testCreds.region").unwrap();
+        assert_eq!(result2.as_string().unwrap().to_std_string_escaped(), "us-west-2");
     }
 }
