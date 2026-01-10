@@ -249,9 +249,9 @@ async fn test_plugin_installation_flow() {
     assert_eq!(plugin.match_patterns, vec!["api.test.com"]);
     assert_eq!(plugin.credential_schema, vec!["api_key"]);
 
-    // Verify plugin is listed in storage
-    let keys = store.list("plugin:").await.expect("Failed to list");
-    assert!(keys.contains(&"plugin:test-service".to_string()));
+    // Verify plugin can be retrieved from storage
+    let retrieved = store.get("plugin:test-service").await.expect("Failed to get plugin");
+    assert!(retrieved.is_some());
 }
 
 /// Test 3: Credential setting flow
@@ -277,14 +277,10 @@ async fn test_credential_setting_flow() {
     let retrieved = store.get(key).await.expect("Failed to get credential");
     assert_eq!(retrieved, Some(value.as_bytes().to_vec()));
 
-    // List and verify
-    let keys = store.list("").await.expect("Failed to list");
-    assert!(keys.contains(&key.to_string()));
-
     // Verify can be deleted
     store.delete(key).await.expect("Failed to delete");
-    let keys = store.list("").await.expect("Failed to list after delete");
-    assert!(!keys.contains(&key.to_string()));
+    let deleted = store.get(key).await.expect("Failed to get after delete");
+    assert_eq!(deleted, None);
 }
 
 /// Test 4: Token management flow

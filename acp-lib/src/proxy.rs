@@ -87,8 +87,8 @@ impl ProxyServer {
             store.set(&store_key, &token_json).await.expect("store token");
         }
 
-        let token_cache = Arc::new(TokenCache::new(Arc::clone(&store)));
         let registry = Arc::new(Registry::new(Arc::clone(&store)));
+        let token_cache = Arc::new(TokenCache::new(Arc::clone(&store), Arc::clone(&registry)));
 
         Self::new(port, ca, token_cache, store, registry)
     }
@@ -473,9 +473,10 @@ mod tests {
             FileStore::new(temp_dir.path().to_path_buf())
                 .await
                 .expect("create FileStore"),
-        );
+        ) as Arc<dyn crate::storage::SecretStore>;
 
-        let token_cache = TokenCache::new(store as Arc<dyn crate::storage::SecretStore>);
+        let registry = Arc::new(crate::registry::Registry::new(Arc::clone(&store)));
+        let token_cache = TokenCache::new(Arc::clone(&store), Arc::clone(&registry));
         let token = token_cache.create("Test Agent").await.expect("create token");
         let token_value = token.token.clone();
 
@@ -494,9 +495,10 @@ mod tests {
             FileStore::new(temp_dir.path().to_path_buf())
                 .await
                 .expect("create FileStore"),
-        );
+        ) as Arc<dyn crate::storage::SecretStore>;
 
-        let token_cache = TokenCache::new(store as Arc<dyn crate::storage::SecretStore>);
+        let registry = Arc::new(crate::registry::Registry::new(Arc::clone(&store)));
+        let token_cache = TokenCache::new(Arc::clone(&store), Arc::clone(&registry));
         let _token = token_cache.create("Test Agent").await.expect("create token");
 
         let headers = vec!["Proxy-Authorization: Bearer wrong-token".to_string()];
@@ -514,9 +516,10 @@ mod tests {
             FileStore::new(temp_dir.path().to_path_buf())
                 .await
                 .expect("create FileStore"),
-        );
+        ) as Arc<dyn crate::storage::SecretStore>;
 
-        let token_cache = TokenCache::new(store as Arc<dyn crate::storage::SecretStore>);
+        let registry = Arc::new(crate::registry::Registry::new(Arc::clone(&store)));
+        let token_cache = TokenCache::new(Arc::clone(&store), Arc::clone(&registry));
         let headers = vec!["Host: example.com".to_string()];
 
         let result = validate_auth(&headers, &token_cache).await;

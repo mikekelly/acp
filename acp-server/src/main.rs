@@ -68,16 +68,16 @@ async fn main() -> anyhow::Result<()> {
     let ca = load_or_generate_ca(&*store).await?;
     tracing::info!("CA certificate loaded/generated");
 
-    // Create token cache (will load tokens lazily from storage)
-    let token_cache = Arc::new(TokenCache::new(Arc::clone(&store)));
+    // Create registry for centralized metadata storage
+    let registry = Arc::new(Registry::new(Arc::clone(&store)));
+    tracing::info!("Registry initialized");
+
+    // Create token cache (will load tokens lazily from Registry)
+    let token_cache = Arc::new(TokenCache::new(Arc::clone(&store), Arc::clone(&registry)));
 
     // Log initial token count
     let initial_tokens = token_cache.list().await?;
     tracing::info!("Loaded {} agent tokens from storage", initial_tokens.len());
-
-    // Create registry for centralized metadata storage
-    let registry = Arc::new(Registry::new(Arc::clone(&store)));
-    tracing::info!("Registry initialized");
 
     // Create ProxyServer with token cache, store, and registry
     let proxy = ProxyServer::new(

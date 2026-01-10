@@ -575,25 +575,14 @@ async fn create_token(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<TokenResponse>, (StatusCode, String)> {
-    use acp_lib::registry::TokenEntry;
-
     let req: CreateTokenRequest = verify_auth(&state, &body).await?;
 
+    // TokenCache.create() handles both storage and registry updates
     let token = state.token_cache.create(&req.name)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create token: {}", e)))?;
 
     let token_value = token.token.clone();
-
-    // Add token to registry
-    let token_entry = TokenEntry {
-        id: token.id.clone(),
-        name: token.name.clone(),
-        created_at: token.created_at,
-        prefix: token.prefix.clone(),
-    };
-    state.registry.add_token(&token_entry).await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add token to registry: {}", e)))?;
 
     // Return with full token (only time it's revealed)
     Ok(Json(TokenResponse {
@@ -613,14 +602,12 @@ async fn delete_token(
 ) -> Result<StatusCode, (StatusCode, String)> {
     verify_auth::<serde_json::Value>(&state, &body).await?;
 
+    // TokenCache.delete() handles both storage and registry updates
     let existed = state.token_cache.delete(&id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete token: {}", e)))?;
 
     if existed {
-        // Remove token from registry
-        state.registry.remove_token(&id).await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to remove token from registry: {}", e)))?;
         Ok(StatusCode::OK)
     } else {
         Ok(StatusCode::NOT_FOUND)
@@ -722,8 +709,8 @@ mod tests {
                 .await
                 .expect("create FileStore"),
         ) as Arc<dyn SecretStore>;
-        let cache = Arc::new(TokenCache::new(Arc::clone(&store)));
         let registry = Arc::new(Registry::new(Arc::clone(&store)));
+        let cache = Arc::new(TokenCache::new(Arc::clone(&store), Arc::clone(&registry)));
         (cache, store, registry, temp_dir)
     }
 
@@ -1214,8 +1201,8 @@ mod tests {
         ) as Arc<dyn SecretStore>;
 
         // Create token cache and registry with shared store
-        let token_cache = Arc::new(TokenCache::new(Arc::clone(&store)));
         let registry = Arc::new(Registry::new(Arc::clone(&store)));
+        let token_cache = Arc::new(TokenCache::new(Arc::clone(&store), Arc::clone(&registry)));
         let state = ApiState::new(9443, 9080, token_cache, Arc::clone(&store), registry);
 
         // Set up password hash

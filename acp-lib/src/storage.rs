@@ -38,14 +38,6 @@ pub trait SecretStore: Send + Sync {
     ///
     /// Returns Ok(()) even if the key doesn't exist (idempotent).
     async fn delete(&self, key: &str) -> Result<()>;
-
-    /// List all keys matching a prefix
-    ///
-    /// # Arguments
-    /// * `prefix` - Key prefix to match (e.g., "credential:aws-s3:")
-    ///
-    /// Returns sorted list of matching keys.
-    async fn list(&self, prefix: &str) -> Result<Vec<String>>;
 }
 
 /// File-based secret storage implementation
@@ -136,8 +128,20 @@ impl SecretStore for FileStore {
             Err(e) => Err(e.into()),
         }
     }
+}
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+impl FileStore {
+    /// List all keys matching a prefix (internal use only)
+    ///
+    /// This method is kept for Phase 5 migration purposes (building registry from existing keys).
+    /// It is not part of the SecretStore trait.
+    ///
+    /// # Arguments
+    /// * `prefix` - Key prefix to match (e.g., "credential:aws-s3:")
+    ///
+    /// Returns sorted list of matching keys.
+    #[allow(dead_code)]
+    async fn list_internal(&self, prefix: &str) -> Result<Vec<String>> {
         let mut keys = Vec::new();
 
         let mut entries = tokio::fs::read_dir(&self.base_path).await?;
@@ -229,26 +233,6 @@ impl SecretStore for KeychainStore {
                 }
             }
         }
-    }
-
-    async fn list(&self, _prefix: &str) -> Result<Vec<String>> {
-        // Note: The security-framework crate's high-level API doesn't provide
-        // a convenient way to list all keychain items. For now, we'll use a
-        // simpler approach: try to get all known keys based on a common pattern.
-        //
-        // In a production implementation, you'd want to use the lower-level
-        // Security Framework API directly to search all items with SecItemCopyMatching.
-        //
-        // For the purposes of this implementation, we'll return an empty list.
-        // This is a limitation but doesn't break the core functionality.
-        // Most use cases don't require listing all keys.
-
-        // Alternative: we could maintain a separate index of keys, but that
-        // adds complexity and a potential failure mode.
-
-        // For now, return an empty list to satisfy the trait
-        // This is a known limitation of the KeychainStore implementation
-        Ok(Vec::new())
     }
 }
 
@@ -348,28 +332,6 @@ mod tests {
             .expect("value should exist");
         assert_eq!(retrieved, binary_data);
 
-        // Test list
-        store
-            .set("credential:aws-s3:key1", b"val1")
-            .await
-            .expect("set should succeed");
-        store
-            .set("credential:aws-s3:key2", b"val2")
-            .await
-            .expect("set should succeed");
-        store
-            .set("credential:exa:key1", b"val3")
-            .await
-            .expect("set should succeed");
-
-        let keys = store
-            .list("credential:aws-s3:")
-            .await
-            .expect("list should succeed");
-        assert_eq!(keys.len(), 2);
-        assert!(keys.contains(&"credential:aws-s3:key1".to_string()));
-        assert!(keys.contains(&"credential:aws-s3:key2".to_string()));
-
         // Test delete
         store
             .delete("test:key1")
@@ -389,9 +351,6 @@ mod tests {
 
         // Cleanup
         store.delete("test:binary").await.ok();
-        store.delete("credential:aws-s3:key1").await.ok();
-        store.delete("credential:aws-s3:key2").await.ok();
-        store.delete("credential:exa:key1").await.ok();
     }
 
     #[tokio::test]
@@ -510,8 +469,5 @@ mod tests {
 
         // Cleanup
         let _ = store.delete("test:binary").await;
-        let _ = store.delete("credential:aws-s3:key1").await;
-        let _ = store.delete("credential:aws-s3:key2").await;
-        let _ = store.delete("credential:exa:key1").await;
     }
 }

@@ -1,11 +1,12 @@
 //! Token Cache - Invalidate-on-write cache for agent tokens
 //!
 //! Provides a caching layer over SecretStore for agent tokens.
-//! - Read path: Check in-memory cache → if miss, load ALL tokens from storage
+//! - Read path: Check in-memory cache → if miss, load ALL tokens from Registry
 //! - Write path: Modify storage → invalidate cache
 //! - Storage is the single source of truth
 
 use crate::error::{AcpError, Result};
+use crate::registry::Registry;
 use crate::storage::SecretStore;
 use crate::types::AgentToken;
 use std::collections::HashMap;
@@ -14,25 +15,27 @@ use tokio::sync::RwLock;
 
 /// Token cache with invalidate-on-write pattern
 ///
-/// Wraps a SecretStore and provides in-memory caching for tokens.
+/// Wraps a SecretStore and Registry, providing in-memory caching for tokens.
 /// Cache is invalidated (set to None) on writes, ensuring storage is always the source of truth.
 pub struct TokenCache {
     store: Arc<dyn SecretStore>,
+    registry: Arc<Registry>,
     cache: RwLock<Option<HashMap<String, AgentToken>>>, // None = invalidated
 }
 
 impl TokenCache {
     /// Create a new TokenCache
-    pub fn new(store: Arc<dyn SecretStore>) -> Self {
+    pub fn new(store: Arc<dyn SecretStore>, registry: Arc<Registry>) -> Self {
         Self {
             store,
+            registry,
             cache: RwLock::new(None), // Start invalidated
         }
     }
 
     /// Get token by bearer token value
     ///
-    /// Loads from disk on cache miss.
+    /// Loads from Registry on cache miss.
     pub async fn get_by_token(&self, token: &str) -> Result<Option<AgentToken>> {
         // Try cache first
         {
@@ -42,7 +45,7 @@ impl TokenCache {
             }
         }
 
-        // Cache miss - load all tokens
+        // Cache miss - load all tokens from Registry
         self.load_cache().await?;
 
         // Try again
@@ -57,7 +60,7 @@ impl TokenCache {
 
     /// List all tokens
     ///
-    /// Loads from disk on cache miss.
+    /// Loads from Registry on cache miss.
     pub async fn list(&self) -> Result<Vec<AgentToken>> {
         // Try cache first
         {
@@ -67,7 +70,7 @@ impl TokenCache {
             }
         }
 
-        // Cache miss - load all tokens
+        // Cache miss - load all tokens from Registry
         self.load_cache().await?;
 
         // Try again
@@ -82,7 +85,7 @@ impl TokenCache {
 
     /// Create a new token
     ///
-    /// Writes to disk and invalidates cache.
+    /// Writes to disk, updates Registry, and invalidates cache.
     pub async fn create(&self, name: &str) -> Result<AgentToken> {
         let token = AgentToken::new(name);
 
@@ -93,6 +96,16 @@ impl TokenCache {
         let store_key = format!("token:{}", token.id);
         self.store.set(&store_key, &token_json).await?;
 
+        // Add to registry
+        use crate::registry::TokenEntry;
+        let token_entry = TokenEntry {
+            id: token.id.clone(),
+            name: token.name.clone(),
+            created_at: token.created_at,
+            prefix: token.prefix.clone(),
+        };
+        self.registry.add_token(&token_entry).await?;
+
         // Invalidate cache
         self.invalidate().await;
 
@@ -101,7 +114,7 @@ impl TokenCache {
 
     /// Delete token by ID
     ///
-    /// Writes to disk and invalidates cache. Returns true if token existed, false otherwise.
+    /// Writes to disk, updates Registry, and invalidates cache. Returns true if token existed, false otherwise.
     pub async fn delete(&self, id: &str) -> Result<bool> {
         // Delete from storage
         let store_key = format!("token:{}", id);
@@ -126,6 +139,9 @@ impl TokenCache {
 
         self.store.delete(&store_key).await?;
 
+        // Remove from registry
+        self.registry.remove_token(id).await?;
+
         // Invalidate cache
         self.invalidate().await;
 
@@ -139,14 +155,18 @@ impl TokenCache {
         *self.cache.write().await = None;
     }
 
-    /// Load all tokens from storage into cache
+    /// Load all tokens from Registry into cache
+    ///
+    /// Uses Registry to get token metadata, then loads token values from storage.
     async fn load_cache(&self) -> Result<()> {
-        const TOKEN_PREFIX: &str = "token:";
-
         let mut token_map = HashMap::new();
-        let keys = self.store.list(TOKEN_PREFIX).await?;
 
-        for key in keys {
+        // Get token list from Registry
+        let token_entries = self.registry.list_tokens().await?;
+
+        // Load each token value from storage
+        for entry in token_entries {
+            let key = format!("token:{}", entry.id);
             if let Some(token_json) = self.store.get(&key).await? {
                 match serde_json::from_slice::<AgentToken>(&token_json) {
                     Ok(token) => {
@@ -169,6 +189,7 @@ impl TokenCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::registry::Registry;
     use crate::storage::FileStore;
 
     #[tokio::test]
@@ -179,8 +200,9 @@ mod tests {
                 .await
                 .expect("create FileStore"),
         );
+        let registry = Arc::new(Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>));
 
-        let cache = TokenCache::new(store);
+        let cache = TokenCache::new(store, registry);
 
         // Create a token
         let token = cache.create("test-agent").await.expect("create token");
@@ -205,8 +227,9 @@ mod tests {
                 .await
                 .expect("create FileStore"),
         );
+        let registry = Arc::new(Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>));
 
-        let cache = TokenCache::new(store);
+        let cache = TokenCache::new(store, registry);
 
         // Initially empty
         let tokens = cache.list().await.expect("list tokens");
@@ -233,8 +256,9 @@ mod tests {
                 .await
                 .expect("create FileStore"),
         );
+        let registry = Arc::new(Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>));
 
-        let cache = TokenCache::new(store);
+        let cache = TokenCache::new(store, registry);
 
         // Create a token
         let token = cache.create("test-agent").await.expect("create token");
@@ -263,8 +287,9 @@ mod tests {
                 .await
                 .expect("create FileStore"),
         );
+        let registry = Arc::new(Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>));
 
-        let cache = TokenCache::new(store);
+        let cache = TokenCache::new(store, registry);
 
         // Delete non-existent token
         let existed = cache.delete("nonexistent").await.expect("delete token");
@@ -279,8 +304,9 @@ mod tests {
                 .await
                 .expect("create FileStore"),
         );
+        let registry = Arc::new(Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>));
 
-        let cache = TokenCache::new(store);
+        let cache = TokenCache::new(store, registry);
 
         // Create token 1
         let token1 = cache.create("agent-1").await.expect("create token");
@@ -309,8 +335,9 @@ mod tests {
                 .await
                 .expect("create FileStore"),
         );
+        let registry = Arc::new(Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>));
 
-        let cache = TokenCache::new(store);
+        let cache = TokenCache::new(store, registry);
 
         // Get non-existent token
         let retrieved = cache
@@ -328,8 +355,9 @@ mod tests {
                 .await
                 .expect("create FileStore"),
         );
+        let registry = Arc::new(Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>));
 
-        let cache = TokenCache::new(Arc::clone(&store) as Arc<dyn SecretStore>);
+        let cache = TokenCache::new(Arc::clone(&store) as Arc<dyn SecretStore>, Arc::clone(&registry));
 
         // Create a token
         let token = cache.create("agent-1").await.expect("create token");
@@ -338,11 +366,21 @@ mod tests {
         let tokens = cache.list().await.expect("list tokens");
         assert_eq!(tokens.len(), 1);
 
-        // Manually add a token to storage (bypassing cache)
+        // Manually add a token to storage AND registry (bypassing cache)
         let token2 = AgentToken::new("agent-2");
         let token_json = serde_json::to_vec(&token2).expect("serialize token");
         let store_key = format!("token:{}", token2.id);
         store.set(&store_key, &token_json).await.expect("store token");
+
+        // Also add to registry
+        use crate::registry::TokenEntry;
+        let token_entry = TokenEntry {
+            id: token2.id.clone(),
+            name: token2.name.clone(),
+            created_at: token2.created_at,
+            prefix: token2.prefix.clone(),
+        };
+        registry.add_token(&token_entry).await.expect("add to registry");
 
         // List should still show only 1 (cache is stale)
         let tokens = cache.list().await.expect("list tokens");
