@@ -7,7 +7,7 @@
 //! - Token management
 //! - Activity monitoring
 
-use acp_lib::AgentToken;
+use acp_lib::{AgentToken, TokenCache};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     async_trait,
@@ -20,7 +20,6 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -35,36 +34,21 @@ pub struct ApiState {
     pub api_port: u16,
     /// Password hash (Argon2)
     pub password_hash: Arc<RwLock<Option<String>>>,
-    /// Stored agent tokens
-    pub tokens: Arc<RwLock<HashMap<String, AgentToken>>>,
+    /// Token cache
+    pub token_cache: Arc<TokenCache>,
     /// Recent activity log
     pub activity: Arc<RwLock<Vec<ActivityEntry>>>,
 }
 
 impl ApiState {
-    pub fn new(proxy_port: u16, api_port: u16) -> Self {
+    /// Create ApiState with token cache
+    pub fn new(proxy_port: u16, api_port: u16, token_cache: Arc<TokenCache>) -> Self {
         Self {
             start_time: std::time::Instant::now(),
             proxy_port,
             api_port,
             password_hash: Arc::new(RwLock::new(None)),
-            tokens: Arc::new(RwLock::new(HashMap::new())),
-            activity: Arc::new(RwLock::new(Vec::new())),
-        }
-    }
-
-    /// Create ApiState with shared tokens (for use with ProxyServer)
-    pub fn new_with_tokens(
-        proxy_port: u16,
-        api_port: u16,
-        tokens: Arc<RwLock<HashMap<String, AgentToken>>>,
-    ) -> Self {
-        Self {
-            start_time: std::time::Instant::now(),
-            proxy_port,
-            api_port,
-            password_hash: Arc::new(RwLock::new(None)),
-            tokens,
+            token_cache,
             activity: Arc::new(RwLock::new(Vec::new())),
         }
     }
@@ -583,8 +567,10 @@ async fn list_tokens(
 ) -> Result<Json<TokensResponse>, (StatusCode, String)> {
     verify_auth::<serde_json::Value>(&state, &body).await?;
 
-    let tokens = state.tokens.read().await;
-    let token_list: Vec<TokenResponse> = tokens.values().map(|t| t.clone().into()).collect();
+    let tokens = state.token_cache.list().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to list tokens: {}", e)))?;
+
+    let token_list: Vec<TokenResponse> = tokens.into_iter().map(|t| t.into()).collect();
 
     Ok(Json(TokensResponse { tokens: token_list }))
 }
@@ -602,29 +588,13 @@ async fn create_token(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<TokenResponse>, (StatusCode, String)> {
-    use acp_lib::storage::create_store;
-
     let req: CreateTokenRequest = verify_auth(&state, &body).await?;
 
-    let token = AgentToken::new(&req.name);
+    let token = state.token_cache.create(&req.name)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create token: {}", e)))?;
+
     let token_value = token.token.clone();
-
-    // Persist token to SecretStore
-    let store = create_store(None)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create store: {}", e)))?;
-
-    let token_json = serde_json::to_vec(&token)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to serialize token: {}", e)))?;
-
-    let store_key = format!("token:{}", token.id);
-    store.set(&store_key, &token_json)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store token: {}", e)))?;
-
-    // Store token in memory (shared with ProxyServer)
-    let mut tokens = state.tokens.write().await;
-    tokens.insert(token.token.clone(), token.clone());
 
     // Return with full token (only time it's revealed)
     Ok(Json(TokenResponse {
@@ -642,32 +612,13 @@ async fn delete_token(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    use acp_lib::storage::create_store;
-
     verify_auth::<serde_json::Value>(&state, &body).await?;
 
-    // Find and remove token from memory
-    let mut tokens = state.tokens.write().await;
+    let existed = state.token_cache.delete(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete token: {}", e)))?;
 
-    // Find the token by ID (tokens are indexed by token value, not ID)
-    let token_to_remove = tokens
-        .iter()
-        .find(|(_, t)| t.id == id)
-        .map(|(k, _)| k.clone());
-
-    if let Some(token_key) = token_to_remove {
-        tokens.remove(&token_key);
-
-        // Also remove from storage
-        let store = create_store(None)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create store: {}", e)))?;
-
-        let store_key = format!("token:{}", id);
-        store.delete(&store_key)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete token from storage: {}", e)))?;
-
+    if existed {
         Ok(StatusCode::OK)
     } else {
         Ok(StatusCode::NOT_FOUND)
@@ -746,14 +697,29 @@ async fn post_activity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use acp_lib::storage::{FileStore, SecretStore};
     use axum::body::Body;
     use axum::http::Request;
     use serial_test::serial;
     use tower::ServiceExt; // for `oneshot`
 
+    /// Helper to create a TokenCache for testing
+    /// Returns (TokenCache, TempDir) - keep the TempDir alive to prevent cleanup
+    async fn create_test_token_cache() -> (Arc<TokenCache>, tempfile::TempDir) {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(
+            FileStore::new(temp_dir.path().to_path_buf())
+                .await
+                .expect("create FileStore"),
+        );
+        let cache = Arc::new(TokenCache::new(store as Arc<dyn SecretStore>));
+        (cache, temp_dir)
+    }
+
     #[tokio::test]
     async fn test_get_status_without_auth() {
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
         let app = create_router(state);
 
         let response = app
@@ -800,7 +766,8 @@ mod tests {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
 
         // Set up password hash
         let password = "testpass123";
@@ -836,7 +803,8 @@ mod tests {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
 
         // Set up password hash
         let password = "testpass123";
@@ -864,7 +832,14 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::OK);
+        let status = response.status();
+        if status != StatusCode::OK {
+            let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body_str = String::from_utf8_lossy(&body_bytes);
+            eprintln!("Error response: {}", body_str);
+            panic!("Expected OK, got {}", status);
+        }
+        assert_eq!(status, StatusCode::OK);
     }
 
     #[tokio::test]
@@ -872,7 +847,8 @@ mod tests {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
 
         // Set up password hash
         let password = "testpass123";
@@ -917,7 +893,8 @@ mod tests {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
 
         // Set up password hash
         let password = "testpass123";
@@ -955,7 +932,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
         let app = create_router(state.clone());
 
         let password = "testpass123";
@@ -1002,7 +980,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
 
         // Set up password hash
         let password = "testpass123";
@@ -1046,7 +1025,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
 
         // Set up password hash
         let password = "testpass123";
@@ -1088,7 +1068,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_install_plugin_requires_auth() {
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
         let app = create_router(state);
 
         // Try to install without password
@@ -1121,7 +1102,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
 
         // Set up password hash
         let password = "testpass123";
@@ -1164,7 +1146,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let state = ApiState::new(9443, 9080);
+        let (token_cache, _temp_dir) = create_test_token_cache().await;
+        let state = ApiState::new(9443, 9080, token_cache);
 
         // Set up password hash
         let password = "testpass123";

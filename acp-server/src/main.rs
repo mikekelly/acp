@@ -9,12 +9,10 @@
 
 pub mod api;
 
-use acp_lib::{storage, tls::CertificateAuthority, AgentToken, Config, ProxyServer};
+use acp_lib::{storage, tls::CertificateAuthority, TokenCache, Config, ProxyServer};
 use clap::Parser;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[derive(Parser)]
 #[command(name = "acp-server")]
@@ -64,25 +62,21 @@ async fn main() -> anyhow::Result<()> {
     // Create storage
     let data_dir_path = config.data_dir.as_ref().map(PathBuf::from);
     let store = storage::create_store(data_dir_path).await?;
+    let store = Arc::from(store); // Convert Box to Arc
 
     // Load or generate CA certificate
     let ca = load_or_generate_ca(&*store).await?;
     tracing::info!("CA certificate loaded/generated");
 
-    // Load tokens from storage
-    let tokens_vec = load_tokens_from_storage(&*store).await?;
-    let token_count = tokens_vec.len();
-    tracing::info!("Loaded {} agent tokens from storage", token_count);
+    // Create token cache (will load tokens lazily from storage)
+    let token_cache = Arc::new(TokenCache::new(Arc::clone(&store)));
 
-    // Create shared token map (used by both API and ProxyServer)
-    let tokens_map: HashMap<String, AgentToken> = tokens_vec
-        .into_iter()
-        .map(|t| (t.token.clone(), t))
-        .collect();
-    let shared_tokens = Arc::new(RwLock::new(tokens_map));
+    // Log initial token count
+    let initial_tokens = token_cache.list().await?;
+    tracing::info!("Loaded {} agent tokens from storage", initial_tokens.len());
 
-    // Create ProxyServer with shared token state
-    let proxy = ProxyServer::new(config.proxy_port, ca, Arc::clone(&shared_tokens))?;
+    // Create ProxyServer with token cache
+    let proxy = ProxyServer::new(config.proxy_port, ca, Arc::clone(&token_cache))?;
 
     // Spawn proxy server in background
     let proxy_port = config.proxy_port;
@@ -93,11 +87,11 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Create API state with shared tokens
-    let api_state = api::ApiState::new_with_tokens(
+    // Create API state with token cache
+    let api_state = api::ApiState::new(
         config.proxy_port,
         config.api_port,
-        shared_tokens,
+        token_cache,
     );
 
     // Build the API router
@@ -141,31 +135,6 @@ async fn load_or_generate_ca(store: &dyn storage::SecretStore) -> anyhow::Result
             Ok(ca)
         }
     }
-}
-
-/// Load tokens from storage
-async fn load_tokens_from_storage(
-    store: &dyn storage::SecretStore,
-) -> anyhow::Result<Vec<AgentToken>> {
-    const TOKEN_PREFIX: &str = "token:";
-
-    let mut tokens = Vec::new();
-    let keys = store.list(TOKEN_PREFIX).await?;
-
-    for key in keys {
-        if let Some(token_json) = store.get(&key).await? {
-            match serde_json::from_slice::<AgentToken>(&token_json) {
-                Ok(token) => {
-                    tokens.push(token);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to deserialize token {}: {}", key, e);
-                }
-            }
-        }
-    }
-
-    Ok(tokens)
 }
 
 #[cfg(test)]

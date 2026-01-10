@@ -32,6 +32,7 @@ cargo run --bin acp-server  # Run server
 - `FileStore` - File-based storage with 0600 permissions, base64url-encoded filenames
 - `KeychainStore` - macOS Keychain integration (conditional compilation)
 - `create_store()` - Factory for platform-appropriate storage
+- `TokenCache` - Invalidate-on-write cache over SecretStore for agent tokens (read from cache/disk, write to disk + invalidate)
 - `CertificateAuthority` - TLS CA for dynamic certificate generation (Phase 3)
 - `ProxyServer` - MITM HTTPS proxy with agent authentication and bidirectional streaming (Phase 4)
 
@@ -57,14 +58,14 @@ cargo run --bin acp-server  # Run server
 - **Bidirectional streaming**: tokio::io::copy with tokio::select! for full-duplex proxying
 - **HTTP parsing & transforms**: `http_utils` module parses raw HTTP, `plugin_matcher` finds matching plugins, `proxy_transforms` executes transforms
 - **Transform pipeline**: Parse HTTP → Match host → Load credentials → Execute plugin → Serialize → Forward
-- **Token sharing**: ProxyServer uses `Arc<RwLock<HashMap<String, AgentToken>>>` shared with Management API, enabling dynamic token updates without server restart
+- **Token caching**: ProxyServer and Management API share `Arc<TokenCache>` which implements invalidate-on-write caching over SecretStore, enabling dynamic token updates without server restart
 
 ## Management API (Phase 6)
 - **Authentication**: Client sends `password_hash` (SHA512 of password) in request body; server verifies Argon2(SHA512(password))
 - **Endpoints**: `/status` (no auth), `/plugins`, `/tokens`, `/credentials/:plugin/:key`, `/activity` (all require auth)
 - **Token management**: Full token value only returned on creation (via `token` field); list endpoint shows prefix only
-- **Token persistence**: Tokens are stored in SecretStore with key `token:{id}` on creation and removed on deletion
-- **State management**: `ApiState` holds server start time, ports, password hash, shared token map, and activity log
+- **Token persistence**: Tokens are stored in SecretStore with key `token:{id}` via TokenCache create/delete methods
+- **State management**: `ApiState` holds server start time, ports, password hash, TokenCache, and activity log
 
 ## CLI (Phase 7)
 - **Password input**: Uses `rpassword` crate for hidden password input (no echo)
@@ -109,7 +110,7 @@ cargo run --bin acp-server  # Run server
 
 ## Gotchas
 - **Wildcard matching is single-level only**: The pattern `*.s3.amazonaws.com` matches `bucket.s3.amazonaws.com` but rejects both `s3.amazonaws.com` (no subdomain) and `evil.com.s3.amazonaws.com` (multiple levels)
-- **Token serialization**: `AgentToken` uses `#[serde(skip_serializing)]` on the `token` field to prevent accidental exposure in JSON responses
+- **Token serialization**: `AgentToken` fully serializes including the `token` field (needed for storage). API responses use `TokenResponse` wrapper to control token exposure - only shown on creation.
 - **Token field access**: `AgentToken.token` is a public field (not a method) - access via `token.token.clone()` not `token.token()`
 - **Boa 0.19 API**: When using Boa engine, must import `JsArgs` trait for `.get_or_undefined()`, use `JsString::from()` for string literals in API calls, import `base64::Engine` trait for `.encode()` method on BASE64_STANDARD
 - **Boa closures with state**: `NativeFunction::from_fn_ptr()` only accepts pure function pointers, not closures that capture variables. To maintain state, use JavaScript globals or context properties instead. Example: Store logs in `__acp_logs` JavaScript array rather than Rust Rc<RefCell<Vec<String>>>

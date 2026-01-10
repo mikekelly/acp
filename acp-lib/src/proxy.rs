@@ -9,14 +9,13 @@
 
 use crate::error::{AcpError, Result};
 use crate::tls::CertificateAuthority;
+use crate::token_cache::TokenCache;
 use crate::types::AgentToken;
 use rustls::pki_types::CertificateDer;
 use rustls::ServerConfig;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 use tracing::{debug, error, info};
 
@@ -26,18 +25,18 @@ pub struct ProxyServer {
     port: u16,
     /// Certificate Authority for dynamic cert generation
     ca: Arc<CertificateAuthority>,
-    /// Valid agent tokens for authentication (shared with API)
-    tokens: Arc<RwLock<HashMap<String, AgentToken>>>,
+    /// Token cache for authentication
+    token_cache: Arc<TokenCache>,
     /// TLS connector for upstream connections
     upstream_connector: TlsConnector,
 }
 
 impl ProxyServer {
-    /// Create a new ProxyServer instance with shared token state
+    /// Create a new ProxyServer instance with token cache
     pub fn new(
         port: u16,
         ca: CertificateAuthority,
-        tokens: Arc<RwLock<HashMap<String, AgentToken>>>,
+        token_cache: Arc<TokenCache>,
     ) -> Result<Self> {
         // Configure upstream TLS connector with system CA trust
         let root_store = rustls::RootCertStore {
@@ -53,21 +52,34 @@ impl ProxyServer {
         Ok(Self {
             port,
             ca: Arc::new(ca),
-            tokens,
+            token_cache,
             upstream_connector,
         })
     }
 
     /// Create a new ProxyServer instance from a Vec of tokens (for backward compatibility in tests)
     #[cfg(test)]
-    pub fn new_from_vec(port: u16, ca: CertificateAuthority, tokens: Vec<AgentToken>) -> Result<Self> {
-        // Build token map for O(1) lookups
-        let token_map: HashMap<String, AgentToken> = tokens
-            .into_iter()
-            .map(|t| (t.token.clone(), t))
-            .collect();
+    pub async fn new_from_vec_async(port: u16, ca: CertificateAuthority, tokens: Vec<AgentToken>) -> Result<Self> {
+        use crate::storage::{FileStore, SecretStore};
 
-        Self::new(port, ca, Arc::new(RwLock::new(token_map)))
+        // Create a temporary FileStore for testing
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(
+            FileStore::new(temp_dir.path().to_path_buf())
+                .await
+                .expect("create FileStore"),
+        );
+
+        // Pre-populate storage with tokens
+        for token in &tokens {
+            let token_json = serde_json::to_vec(&token).expect("serialize token");
+            let store_key = format!("token:{}", token.id);
+            store.set(&store_key, &token_json).await.expect("store token");
+        }
+
+        let token_cache = Arc::new(TokenCache::new(store as Arc<dyn SecretStore>));
+
+        Self::new(port, ca, token_cache)
     }
 
     /// Start the proxy server
@@ -87,11 +99,11 @@ impl ProxyServer {
             debug!("Accepted connection from {}", addr);
 
             let ca = Arc::clone(&self.ca);
-            let tokens = Arc::clone(&self.tokens);
+            let token_cache = Arc::clone(&self.token_cache);
             let upstream_connector = self.upstream_connector.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, ca, tokens, upstream_connector).await {
+                if let Err(e) = handle_connection(stream, ca, token_cache, upstream_connector).await {
                     error!("Connection error: {}", e);
                 }
             });
@@ -103,7 +115,7 @@ impl ProxyServer {
 async fn handle_connection(
     mut stream: TcpStream,
     ca: Arc<CertificateAuthority>,
-    tokens: Arc<RwLock<HashMap<String, AgentToken>>>,
+    token_cache: Arc<TokenCache>,
     upstream_connector: TlsConnector,
 ) -> Result<()> {
     // Read the CONNECT request
@@ -136,7 +148,7 @@ async fn handle_connection(
     }
 
     // Validate authentication
-    let _agent_token = validate_auth(&headers, &tokens).await?;
+    let _agent_token = validate_auth(&headers, &token_cache).await?;
 
     // Send 200 Connection Established
     stream
@@ -183,7 +195,7 @@ fn parse_connect_request(line: &str) -> Result<String> {
 /// Validate Proxy-Authorization header
 async fn validate_auth(
     headers: &[String],
-    tokens: &Arc<RwLock<HashMap<String, AgentToken>>>,
+    token_cache: &TokenCache,
 ) -> Result<AgentToken> {
     for header in headers {
         let header = header.trim();
@@ -191,10 +203,9 @@ async fn validate_auth(
             let value = header[20..].trim(); // Skip "proxy-authorization:"
 
             if let Some(bearer_token) = value.strip_prefix("Bearer ") {
-                // Acquire read lock to check tokens
-                let tokens_guard = tokens.read().await;
-                if let Some(token) = tokens_guard.get(bearer_token) {
-                    return Ok(token.clone());
+                // Check token cache
+                if let Some(token) = token_cache.get_by_token(bearer_token).await? {
+                    return Ok(token);
                 }
             }
 
@@ -349,38 +360,60 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_auth_valid() {
-        let token = AgentToken::new("Test Agent");
+        use crate::storage::FileStore;
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(
+            FileStore::new(temp_dir.path().to_path_buf())
+                .await
+                .expect("create FileStore"),
+        );
+
+        let token_cache = TokenCache::new(store as Arc<dyn crate::storage::SecretStore>);
+        let token = token_cache.create("Test Agent").await.expect("create token");
         let token_value = token.token.clone();
-        let mut tokens = HashMap::new();
-        tokens.insert(token_value.clone(), token);
-        let tokens = Arc::new(RwLock::new(tokens));
 
         let headers = vec![format!("Proxy-Authorization: Bearer {}", token_value)];
 
-        let result = validate_auth(&headers, &tokens).await;
+        let result = validate_auth(&headers, &token_cache).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_validate_auth_invalid_token() {
-        let token = AgentToken::new("Test Agent");
-        let mut tokens = HashMap::new();
-        tokens.insert(token.token.clone(), token);
-        let tokens = Arc::new(RwLock::new(tokens));
+        use crate::storage::FileStore;
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(
+            FileStore::new(temp_dir.path().to_path_buf())
+                .await
+                .expect("create FileStore"),
+        );
+
+        let token_cache = TokenCache::new(store as Arc<dyn crate::storage::SecretStore>);
+        let _token = token_cache.create("Test Agent").await.expect("create token");
 
         let headers = vec!["Proxy-Authorization: Bearer wrong-token".to_string()];
 
-        let result = validate_auth(&headers, &tokens).await;
+        let result = validate_auth(&headers, &token_cache).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_validate_auth_missing() {
-        let tokens = HashMap::new();
-        let tokens = Arc::new(RwLock::new(tokens));
+        use crate::storage::FileStore;
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(
+            FileStore::new(temp_dir.path().to_path_buf())
+                .await
+                .expect("create FileStore"),
+        );
+
+        let token_cache = TokenCache::new(store as Arc<dyn crate::storage::SecretStore>);
         let headers = vec!["Host: example.com".to_string()];
 
-        let result = validate_auth(&headers, &tokens).await;
+        let result = validate_auth(&headers, &token_cache).await;
         assert!(result.is_err());
     }
 
@@ -389,7 +422,7 @@ mod tests {
         let ca = CertificateAuthority::generate().expect("CA generation failed");
         let tokens = vec![AgentToken::new("Test Agent")];
 
-        let proxy = ProxyServer::new_from_vec(9443, ca, tokens);
+        let proxy = ProxyServer::new_from_vec_async(9443, ca, tokens).await;
         assert!(proxy.is_ok());
     }
 }

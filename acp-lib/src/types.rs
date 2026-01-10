@@ -159,8 +159,7 @@ pub struct AgentToken {
     pub name: String,
     /// Token prefix (first 8 chars) for display
     pub prefix: String,
-    /// Full token value (stored securely, not serialized to client)
-    #[serde(skip_serializing)]
+    /// Full token value (stored securely)
     pub token: String,
     /// Creation timestamp
     pub created_at: DateTime<Utc>,
@@ -400,13 +399,13 @@ mod tests {
     }
 
     #[test]
-    fn test_agent_token_serialization_excludes_token() {
+    fn test_agent_token_serialization() {
         let token = AgentToken::new("Test Agent");
         let json = serde_json::to_string(&token).unwrap();
 
-        // Token should not be in serialized output
-        assert!(!json.contains(&token.token));
-        // But other fields should be present
+        // Token should be in serialized output (needed for storage)
+        assert!(json.contains(&token.token));
+        // Other fields should be present too
         assert!(json.contains(&token.name));
         assert!(json.contains(&token.prefix));
     }
