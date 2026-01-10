@@ -9,6 +9,9 @@
 
 pub mod api;
 
+#[cfg(target_os = "macos")]
+pub mod launchd;
+
 use acp_lib::{storage, tls::CertificateAuthority, TokenCache, Registry, Config, ProxyServer};
 use clap::Parser;
 use std::path::PathBuf;

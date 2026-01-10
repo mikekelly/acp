@@ -27,6 +27,7 @@ sha2 = "0.10"
 chrono.workspace = true
 git2.workspace = true
 tempfile.workspace = true
+dirs.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

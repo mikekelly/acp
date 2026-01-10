@@ -31,6 +31,7 @@ argon2 = { version = "0.5", features = ["std"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 git2 = "0.19"
 tempfile = "3.13"
+dirs = "5.0"
 
 # Our own crates
 acp-lib = { path = "acp-lib" }
