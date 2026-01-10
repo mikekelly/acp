@@ -104,12 +104,14 @@ cargo run --bin acp-server  # Run server
 
 ## Installation (Phase 8.3)
 - **install.sh**: Cross-platform installation script (macOS/Linux, x86_64/aarch64) with build-from-source and binary download support
-- **Dockerfile**: Multi-stage build with dependency caching layer; runtime uses non-root user `acp` on Debian Bookworm
-- **docker-compose.yml**: Complete test environment with ACP server, mock API (httpbin), and persistent volumes
+- **Dockerfile**: Multi-stage build with dependency caching layer using `rustlang/rust:nightly-slim` (required for edition2024 support); runtime uses non-root user `acp` on Debian Bookworm with curl installed for healthcheck
+- **Dockerfile.test-runner**: Test runner image with curl, jq, and coreutils for integration testing
+- **docker-compose.yml**: Complete test environment with ACP server, mock API (httpbin), test-runner service (profile: test), and persistent volumes
+- **smoke-tests/test-docker-integration.sh**: Integration tests covering init, token creation, credential management, and API access
 - **Binaries**: Release binaries at `target/release/acp` and `target/release/acp-server` (5-6MB each)
-- **Default ports**: 9443 (proxy), 9080 (management API)
+- **Default ports**: 9443 (proxy), 9080 (management API), 8080 (mock-api internal)
 - **Data directory**: `/var/lib/acp` in Docker, `~/.config/acp/` or `$XDG_CONFIG_HOME/acp/` on host systems
-- **Health check**: Management API `/status` endpoint used for Docker health checks
+- **Health check**: Management API `/status` endpoint used for Docker health checks (requires curl in runtime image)
 
 ## Gotchas
 - **Wildcard matching is single-level only**: The pattern `*.s3.amazonaws.com` matches `bucket.s3.amazonaws.com` but rejects both `s3.amazonaws.com` (no subdomain) and `evil.com.s3.amazonaws.com` (multiple levels)
@@ -134,3 +136,6 @@ cargo run --bin acp-server  # Run server
 - **PluginRuntime is not Send**: PluginRuntime contains Boa engine with `Rc` types, making it not `Send`. In async Axum handlers, scope PluginRuntime operations in a block to ensure the runtime is dropped before any `.await` points. Enable `axum = { version = "0.7", features = ["macros"] }` and use `#[axum::debug_handler]` to see detailed Send/Sync errors during development.
 - **git2 callbacks are not Send**: `RepoBuilder` with `RemoteCallbacks` closures is not `Send`. In async handlers, scope the entire git clone operation (callbacks, fetch options, builder) in a block to ensure all non-Send types are dropped before any `.await` points.
 - **SecretStore trait with ?Sized**: When working with trait objects (`&dyn SecretStore`), functions accepting generic `S: SecretStore` parameters need `+ ?Sized` bound to support unsized types. This applies to `parse_and_transform()`, `load_plugin_credentials()`, and `find_matching_plugin()`.
+- **Rust nightly required for Docker builds**: The Dockerfile uses `rustlang/rust:nightly-slim` because `base64ct` 1.8.2+ requires edition2024 support, which is not stabilized in Rust 1.83/1.84. Use nightly for Docker builds.
+- **Docker compose profiles**: The test-runner service uses profile `test`, so it only runs when invoked with `docker compose --profile test up`. This prevents accidental test runs during normal compose up operations.
+- **Docker healthcheck dependencies**: Use `depends_on` with `condition: service_healthy` to ensure test-runner waits for acp-server to be ready before running tests.

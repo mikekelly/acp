@@ -1,0 +1,31 @@
+# Test runner image for ACP integration tests
+# Based on Debian slim with curl, jq, and sha512sum
+
+FROM debian:bookworm-slim
+
+# Install test dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    curl \
+    jq \
+    coreutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create test user
+RUN useradd -m -s /bin/bash tester
+
+# Set up working directory
+WORKDIR /tests
+
+# Copy test script directly (since smoke-tests/ is in .dockerignore)
+# We'll create it inline or mount it
+# For now, create a placeholder that will be overridden by volume mount
+
+# Make test directory writable
+RUN mkdir -p /tests && chown tester:tester /tests
+
+# Switch to test user
+USER tester
+
+# Default command runs the integration tests
+CMD ["/bin/bash", "/tests/test-docker-integration.sh"]

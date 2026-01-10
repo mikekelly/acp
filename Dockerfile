@@ -2,7 +2,8 @@
 # Produces a minimal runtime image with acp and acp-server binaries
 
 # Build stage
-FROM rust:1.85-slim AS builder
+# Using nightly for edition2024 support (required by base64ct 1.8.2)
+FROM rustlang/rust:nightly-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && \
@@ -43,13 +44,15 @@ RUN touch acp/src/main.rs acp-server/src/main.rs acp-lib/src/lib.rs && \
     cargo build --release --bins
 
 # Runtime stage
-FROM debian:bookworm-slim
+# Must match builder's Debian version for GLIBC compatibility
+FROM debian:trixie-slim
 
 # Install runtime dependencies
 RUN apt-get update && \
     apt-get install -y \
     ca-certificates \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for running the service

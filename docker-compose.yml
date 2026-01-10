@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Docker Compose configuration for ACP testing and development
 # This sets up a complete test environment with ACP server and optional test services
 
@@ -31,28 +29,35 @@ services:
     networks:
       - acp-network
 
-  # Test client container for smoke tests
-  # Uncomment to run automated tests
-  # test-client:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: acp-test-client
-  #   depends_on:
-  #     - acp-server
-  #   volumes:
-  #     - ./smoke-tests:/tests:ro
-  #   command: ["/bin/bash", "/tests/run-all.sh"]
-  #   networks:
-  #     - acp-network
+  # Integration test runner
+  # Runs comprehensive integration tests against the ACP server
+  # Usage: docker compose up test-runner --build
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-runner
+    container_name: acp-test-runner
+    depends_on:
+      acp-server:
+        condition: service_healthy
+      mock-api:
+        condition: service_started
+    volumes:
+      - ./smoke-tests/test-docker-integration.sh:/tests/test-docker-integration.sh:ro
+    environment:
+      - ACP_SERVER_URL=http://acp-server:9080
+    networks:
+      - acp-network
+    profiles:
+      - test
 
   # Mock upstream API for testing
   # Provides a simple echo/mirror service to test proxy behavior
   mock-api:
-    image: kennethreitz/httpbin
+    image: mccutchen/go-httpbin
     container_name: acp-mock-api
     ports:
-      - "8080:80"
+      - "8080:8080"
     networks:
       - acp-network
     restart: unless-stopped
