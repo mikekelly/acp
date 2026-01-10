@@ -32,3 +32,4 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = "3.13"
 hyper = "1.5"
+serial_test = "3.1"

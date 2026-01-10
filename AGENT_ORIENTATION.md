@@ -57,12 +57,14 @@ cargo run --bin acp-server  # Run server
 - **Bidirectional streaming**: tokio::io::copy with tokio::select! for full-duplex proxying
 - **HTTP parsing & transforms**: `http_utils` module parses raw HTTP, `plugin_matcher` finds matching plugins, `proxy_transforms` executes transforms
 - **Transform pipeline**: Parse HTTP → Match host → Load credentials → Execute plugin → Serialize → Forward
+- **Token sharing**: ProxyServer uses `Arc<RwLock<HashMap<String, AgentToken>>>` shared with Management API, enabling dynamic token updates without server restart
 
 ## Management API (Phase 6)
 - **Authentication**: Client sends `password_hash` (SHA512 of password) in request body; server verifies Argon2(SHA512(password))
 - **Endpoints**: `/status` (no auth), `/plugins`, `/tokens`, `/credentials/:plugin/:key`, `/activity` (all require auth)
 - **Token management**: Full token value only returned on creation (via `token` field); list endpoint shows prefix only
-- **State management**: `ApiState` holds server start time, ports, password hash, tokens, and activity log
+- **Token persistence**: Tokens are stored in SecretStore with key `token:{id}` on creation and removed on deletion
+- **State management**: `ApiState` holds server start time, ports, password hash, shared token map, and activity log
 
 ## CLI (Phase 7)
 - **Password input**: Uses `rpassword` crate for hidden password input (no echo)

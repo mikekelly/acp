@@ -263,6 +263,12 @@ impl SecretStore for KeychainStore {
 /// * `data_dir` - Optional directory for FileStore. If None on macOS, uses Keychain.
 ///   If None on other platforms, uses a default location.
 pub async fn create_store(data_dir: Option<PathBuf>) -> Result<Box<dyn SecretStore>> {
+    // Check for ACP_DATA_DIR environment variable first (useful for testing)
+    if let Ok(env_path) = std::env::var("ACP_DATA_DIR") {
+        let store = FileStore::new(PathBuf::from(env_path)).await?;
+        return Ok(Box::new(store));
+    }
+
     match data_dir {
         Some(path) => {
             // Explicit file storage requested

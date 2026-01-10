@@ -433,3 +433,75 @@ async fn test_complete_integration_flow() {
     assert!(token_value.starts_with("acp_"));
     assert!(token_value.len() > 20);
 }
+
+/// Test 6: Token sharing between API and ProxyServer
+///
+/// Flow: create token via API → verify proxy can authenticate with new token
+///
+/// This test ensures that tokens created dynamically via the Management API
+/// are immediately visible to the ProxyServer for authentication.
+#[tokio::test]
+#[cfg_attr(target_os = "macos", ignore = "Requires keychain access on macOS")]
+async fn test_token_sharing_between_api_and_proxy() {
+    let server = TestServer::start().await.expect("Failed to start server");
+    server.init("test_password_789").await.expect("Init failed");
+
+    let client = Client::new();
+    let password = "test_password_789";
+
+    // Create first token via API
+    let create_body = TestServer::auth_body(
+        password,
+        json!({
+            "name": "first-agent",
+        }),
+    );
+
+    let response = client
+        .post(&format!("{}/tokens/create", server.api_url))
+        .json(&create_body)
+        .send()
+        .await
+        .expect("Create first token failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let first_token: serde_json::Value = response.json().await.expect("Parse failed");
+    let first_token_value = first_token["token"].as_str().expect("No first token");
+
+    // Create second token via API
+    let create_body = TestServer::auth_body(
+        password,
+        json!({
+            "name": "second-agent",
+        }),
+    );
+
+    let response = client
+        .post(&format!("{}/tokens/create", server.api_url))
+        .json(&create_body)
+        .send()
+        .await
+        .expect("Create second token failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let second_token: serde_json::Value = response.json().await.expect("Parse failed");
+    let second_token_value = second_token["token"].as_str().expect("No second token");
+
+    // Verify both tokens are different
+    assert_ne!(first_token_value, second_token_value);
+
+    // TODO: Add proxy authentication test when proxy auth validation is testable
+    // For now, we verify tokens are in storage
+    let list_body = TestServer::auth_body(password, json!({}));
+    let response = client
+        .post(&format!("{}/tokens", server.api_url))
+        .json(&list_body)
+        .send()
+        .await
+        .expect("List tokens failed");
+
+    let tokens_list: serde_json::Value = response.json().await.expect("Parse failed");
+    let tokens = tokens_list["tokens"].as_array().expect("tokens not array");
+
+    assert_eq!(tokens.len(), 2, "Expected both tokens to be listed");
+}

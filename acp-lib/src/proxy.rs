@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::RwLock;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 use tracing::{debug, error, info};
 
@@ -25,21 +26,19 @@ pub struct ProxyServer {
     port: u16,
     /// Certificate Authority for dynamic cert generation
     ca: Arc<CertificateAuthority>,
-    /// Valid agent tokens for authentication
-    tokens: Arc<HashMap<String, AgentToken>>,
+    /// Valid agent tokens for authentication (shared with API)
+    tokens: Arc<RwLock<HashMap<String, AgentToken>>>,
     /// TLS connector for upstream connections
     upstream_connector: TlsConnector,
 }
 
 impl ProxyServer {
-    /// Create a new ProxyServer instance
-    pub fn new(port: u16, ca: CertificateAuthority, tokens: Vec<AgentToken>) -> Result<Self> {
-        // Build token map for O(1) lookups
-        let token_map: HashMap<String, AgentToken> = tokens
-            .into_iter()
-            .map(|t| (t.token.clone(), t))
-            .collect();
-
+    /// Create a new ProxyServer instance with shared token state
+    pub fn new(
+        port: u16,
+        ca: CertificateAuthority,
+        tokens: Arc<RwLock<HashMap<String, AgentToken>>>,
+    ) -> Result<Self> {
         // Configure upstream TLS connector with system CA trust
         let root_store = rustls::RootCertStore {
             roots: webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect(),
@@ -54,9 +53,21 @@ impl ProxyServer {
         Ok(Self {
             port,
             ca: Arc::new(ca),
-            tokens: Arc::new(token_map),
+            tokens,
             upstream_connector,
         })
+    }
+
+    /// Create a new ProxyServer instance from a Vec of tokens (for backward compatibility in tests)
+    #[cfg(test)]
+    pub fn new_from_vec(port: u16, ca: CertificateAuthority, tokens: Vec<AgentToken>) -> Result<Self> {
+        // Build token map for O(1) lookups
+        let token_map: HashMap<String, AgentToken> = tokens
+            .into_iter()
+            .map(|t| (t.token.clone(), t))
+            .collect();
+
+        Self::new(port, ca, Arc::new(RwLock::new(token_map)))
     }
 
     /// Start the proxy server
@@ -92,7 +103,7 @@ impl ProxyServer {
 async fn handle_connection(
     mut stream: TcpStream,
     ca: Arc<CertificateAuthority>,
-    tokens: Arc<HashMap<String, AgentToken>>,
+    tokens: Arc<RwLock<HashMap<String, AgentToken>>>,
     upstream_connector: TlsConnector,
 ) -> Result<()> {
     // Read the CONNECT request
@@ -125,7 +136,7 @@ async fn handle_connection(
     }
 
     // Validate authentication
-    let _agent_token = validate_auth(&headers, &tokens)?;
+    let _agent_token = validate_auth(&headers, &tokens).await?;
 
     // Send 200 Connection Established
     stream
@@ -170,9 +181,9 @@ fn parse_connect_request(line: &str) -> Result<String> {
 }
 
 /// Validate Proxy-Authorization header
-fn validate_auth(
+async fn validate_auth(
     headers: &[String],
-    tokens: &HashMap<String, AgentToken>,
+    tokens: &Arc<RwLock<HashMap<String, AgentToken>>>,
 ) -> Result<AgentToken> {
     for header in headers {
         let header = header.trim();
@@ -180,7 +191,9 @@ fn validate_auth(
             let value = header[20..].trim(); // Skip "proxy-authorization:"
 
             if let Some(bearer_token) = value.strip_prefix("Bearer ") {
-                if let Some(token) = tokens.get(bearer_token) {
+                // Acquire read lock to check tokens
+                let tokens_guard = tokens.read().await;
+                if let Some(token) = tokens_guard.get(bearer_token) {
                     return Ok(token.clone());
                 }
             }
@@ -334,37 +347,40 @@ mod tests {
         assert!(parse_host_port("example.com:abc").is_err());
     }
 
-    #[test]
-    fn test_validate_auth_valid() {
+    #[tokio::test]
+    async fn test_validate_auth_valid() {
         let token = AgentToken::new("Test Agent");
         let token_value = token.token.clone();
         let mut tokens = HashMap::new();
         tokens.insert(token_value.clone(), token);
+        let tokens = Arc::new(RwLock::new(tokens));
 
         let headers = vec![format!("Proxy-Authorization: Bearer {}", token_value)];
 
-        let result = validate_auth(&headers, &tokens);
+        let result = validate_auth(&headers, &tokens).await;
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_validate_auth_invalid_token() {
+    #[tokio::test]
+    async fn test_validate_auth_invalid_token() {
         let token = AgentToken::new("Test Agent");
         let mut tokens = HashMap::new();
         tokens.insert(token.token.clone(), token);
+        let tokens = Arc::new(RwLock::new(tokens));
 
         let headers = vec!["Proxy-Authorization: Bearer wrong-token".to_string()];
 
-        let result = validate_auth(&headers, &tokens);
+        let result = validate_auth(&headers, &tokens).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_validate_auth_missing() {
+    #[tokio::test]
+    async fn test_validate_auth_missing() {
         let tokens = HashMap::new();
+        let tokens = Arc::new(RwLock::new(tokens));
         let headers = vec!["Host: example.com".to_string()];
 
-        let result = validate_auth(&headers, &tokens);
+        let result = validate_auth(&headers, &tokens).await;
         assert!(result.is_err());
     }
 
@@ -373,7 +389,7 @@ mod tests {
         let ca = CertificateAuthority::generate().expect("CA generation failed");
         let tokens = vec![AgentToken::new("Test Agent")];
 
-        let proxy = ProxyServer::new(9443, ca, tokens);
+        let proxy = ProxyServer::new_from_vec(9443, ca, tokens);
         assert!(proxy.is_ok());
     }
 }

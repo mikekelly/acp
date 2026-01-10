@@ -602,14 +602,29 @@ async fn create_token(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<TokenResponse>, (StatusCode, String)> {
+    use acp_lib::storage::create_store;
+
     let req: CreateTokenRequest = verify_auth(&state, &body).await?;
 
     let token = AgentToken::new(&req.name);
     let token_value = token.token.clone();
 
-    // Store token
+    // Persist token to SecretStore
+    let store = create_store(None)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create store: {}", e)))?;
+
+    let token_json = serde_json::to_vec(&token)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to serialize token: {}", e)))?;
+
+    let store_key = format!("token:{}", token.id);
+    store.set(&store_key, &token_json)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store token: {}", e)))?;
+
+    // Store token in memory (shared with ProxyServer)
     let mut tokens = state.tokens.write().await;
-    tokens.insert(token.id.clone(), token.clone());
+    tokens.insert(token.token.clone(), token.clone());
 
     // Return with full token (only time it's revealed)
     Ok(Json(TokenResponse {
@@ -627,10 +642,32 @@ async fn delete_token(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    use acp_lib::storage::create_store;
+
     verify_auth::<serde_json::Value>(&state, &body).await?;
 
+    // Find and remove token from memory
     let mut tokens = state.tokens.write().await;
-    if tokens.remove(&id).is_some() {
+
+    // Find the token by ID (tokens are indexed by token value, not ID)
+    let token_to_remove = tokens
+        .iter()
+        .find(|(_, t)| t.id == id)
+        .map(|(k, _)| k.clone());
+
+    if let Some(token_key) = token_to_remove {
+        tokens.remove(&token_key);
+
+        // Also remove from storage
+        let store = create_store(None)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create store: {}", e)))?;
+
+        let store_key = format!("token:{}", id);
+        store.delete(&store_key)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete token from storage: {}", e)))?;
+
         Ok(StatusCode::OK)
     } else {
         Ok(StatusCode::NOT_FOUND)
@@ -711,6 +748,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request;
+    use serial_test::serial;
     use tower::ServiceExt; // for `oneshot`
 
     #[tokio::test]
@@ -911,7 +949,12 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_init_endpoint() {
+        // Use temp directory to avoid test isolation issues with macOS Keychain
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        std::env::set_var("ACP_DATA_DIR", temp_dir.path());
+
         let state = ApiState::new(9443, 9080);
         let app = create_router(state.clone());
 
@@ -950,9 +993,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_install_plugin_github_simple() {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
+
+        // Use temp directory to avoid test isolation issues with macOS Keychain
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
         let state = ApiState::new(9443, 9080);
 
@@ -989,9 +1037,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_install_plugin_clones_repo_and_reads_plugin_js() {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
+
+        // Use temp directory to avoid test isolation issues with macOS Keychain
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
         let state = ApiState::new(9443, 9080);
 
@@ -1059,9 +1112,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_set_credential_endpoint() {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
+
+        // Use temp directory to avoid test isolation issues with macOS Keychain
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
         let state = ApiState::new(9443, 9080);
 
@@ -1097,9 +1155,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_delete_credential_endpoint() {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
+
+        // Use temp directory to avoid test isolation issues with macOS Keychain
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
         let state = ApiState::new(9443, 9080);
 

@@ -74,15 +74,15 @@ async fn main() -> anyhow::Result<()> {
     let token_count = tokens_vec.len();
     tracing::info!("Loaded {} agent tokens from storage", token_count);
 
-    // Create token map for API (needs RwLock for updates)
+    // Create shared token map (used by both API and ProxyServer)
     let tokens_map: HashMap<String, AgentToken> = tokens_vec
-        .iter()
-        .map(|t| (t.token.clone(), t.clone()))
+        .into_iter()
+        .map(|t| (t.token.clone(), t))
         .collect();
-    let api_tokens = Arc::new(RwLock::new(tokens_map));
+    let shared_tokens = Arc::new(RwLock::new(tokens_map));
 
-    // Create ProxyServer (uses immutable token list)
-    let proxy = ProxyServer::new(config.proxy_port, ca, tokens_vec)?;
+    // Create ProxyServer with shared token state
+    let proxy = ProxyServer::new(config.proxy_port, ca, Arc::clone(&shared_tokens))?;
 
     // Spawn proxy server in background
     let proxy_port = config.proxy_port;
@@ -93,11 +93,11 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Create API state with tokens
+    // Create API state with shared tokens
     let api_state = api::ApiState::new_with_tokens(
         config.proxy_port,
         config.api_port,
-        api_tokens,
+        shared_tokens,
     );
 
     // Build the API router
