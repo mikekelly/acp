@@ -89,6 +89,10 @@ cargo run --bin acp-server  # Run server
 - **git2 credentials**: Must use `RepoBuilder` with `FetchOptions` and credentials callback even for public repos. Direct `Repository::clone()` fails with auth error.
 - **Temp directory cleanup**: `tempfile::tempdir()` automatically cleans up when it goes out of scope (RAII)
 - **Error mapping**: Clone failures return BAD_GATEWAY (502), missing plugin.js returns BAD_REQUEST (400)
+- **Plugin credential schema formats**: Supports two formats:
+  1. Simple: `credentialSchema: ["api_key", "secret"]`
+  2. Rich: `credentialSchema: { fields: [{name: "apiKey", label: "API Key", type: "password", required: true}, ...] }`
+  The runtime extracts just the `name` field from the rich format for internal use.
 
 ## Installation (Phase 8.3)
 - **install.sh**: Cross-platform installation script (macOS/Linux, x86_64/aarch64) with build-from-source and binary download support
