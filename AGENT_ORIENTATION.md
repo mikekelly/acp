@@ -73,8 +73,9 @@ cargo run --bin acp-server  # Run server
 
 ## Testing (Phase 8)
 - **Integration tests**: Located in `acp-lib/tests/` for end-to-end testing
-- **Test plugins**: Sample plugins in `plugins/` directory (e.g., `test-api.js`)
-- **Test suite**: 90 total tests across all workspace crates
+- **Bundled plugins**: Production-ready plugins in `plugins/` directory (`exa.js`, `aws-s3.js`)
+- **Plugin testing**: Use `PluginRuntime::load_plugin_from_code()` to load plugins from files for testing (avoids SecretStore dependency)
+- **Test suite**: 90+ tests across all workspace crates
 - **Test organization**: Unit tests inline with source, integration tests in `tests/` directory
 
 ## Gotchas
@@ -91,5 +92,6 @@ cargo run --bin acp-server  # Run server
 - **Axum authentication**: Custom extractors using `FromRequest` with request body are complex in Axum 0.7. Simpler to use helper functions that take `Bytes` parameter and verify authentication manually in each handler.
 - **Argon2 password hashing**: Client sends SHA512(password), server stores Argon2(SHA512(password)). Verification uses `Argon2::default().verify_password()` with client's SHA512 hash against stored Argon2 hash.
 - **PluginRuntime single-context limitation**: Loading a plugin overwrites the global `plugin` object in the JS context. Only the most recently loaded plugin's transform function can be executed. Plugin metadata (name, patterns, schema) is preserved for all loaded plugins.
+- **PluginRuntime loading methods**: Use `load_plugin(name, store)` to load from SecretStore (async), or `load_plugin_from_code(name, code)` to load from string (sync). Both cache the plugin for `execute_transform()`. Using `execute()` + `extract_plugin_metadata()` alone does NOT cache the plugin.
 - **PluginRuntime timeout limitation**: `execute_transform_with_timeout()` cannot interrupt tight infinite loops in JavaScript (Boa limitation). It measures elapsed time after execution completes, so only catches slow operations that eventually finish.
 - **Environment variable test isolation**: Tests modifying environment variables must use a static Mutex to serialize execution and an RAII guard to ensure cleanup, as env vars are process-global and tests run in parallel.
