@@ -7,8 +7,10 @@
 //! 4. Applies plugin transforms
 //! 5. Forwards transformed requests
 
+use acp_lib::registry::{CredentialEntry, PluginEntry, Registry};
 use acp_lib::storage::{FileStore, SecretStore};
 use acp_lib::proxy_transforms::parse_and_transform;
+use std::sync::Arc;
 
 /// Test that parse_and_transform correctly loads multi-field credentials
 #[tokio::test]
@@ -21,7 +23,8 @@ async fn test_parse_and_transform_with_multi_field_credentials() {
             .as_nanos()
     ));
 
-    let store = FileStore::new(temp_dir.clone()).await.unwrap();
+    let store = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap()) as Arc<dyn SecretStore>;
+    let registry = Registry::new(Arc::clone(&store));
 
     // Install a plugin that uses multiple credential fields
     let plugin_code = r#"
@@ -40,16 +43,29 @@ async fn test_parse_and_transform_with_multi_field_credentials() {
 
     store.set("plugin:multi-cred-api", plugin_code.as_bytes()).await.unwrap();
 
+    // Add plugin to registry
+    let plugin_entry = PluginEntry {
+        name: "multi-cred-api".to_string(),
+        hosts: vec!["api.multicred.com".to_string()],
+        credential_schema: vec!["access_key".to_string(), "secret_key".to_string(), "region".to_string()],
+    };
+    registry.add_plugin(&plugin_entry).await.unwrap();
+
     // Store credentials using the API pattern: credential:{plugin}:{field_name}
     store.set("credential:multi-cred-api:access_key", b"AKIAIOSFODNN7EXAMPLE").await.unwrap();
     store.set("credential:multi-cred-api:secret_key", b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY").await.unwrap();
     store.set("credential:multi-cred-api:region", b"us-west-2").await.unwrap();
 
+    // Add credentials to registry
+    registry.add_credential(&CredentialEntry { plugin: "multi-cred-api".to_string(), field: "access_key".to_string() }).await.unwrap();
+    registry.add_credential(&CredentialEntry { plugin: "multi-cred-api".to_string(), field: "secret_key".to_string() }).await.unwrap();
+    registry.add_credential(&CredentialEntry { plugin: "multi-cred-api".to_string(), field: "region".to_string() }).await.unwrap();
+
     // Simulate an incoming HTTP request
     let raw_http = b"GET /api/data HTTP/1.1\r\nHost: api.multicred.com\r\nUser-Agent: TestAgent/1.0\r\n\r\n";
 
     // Transform the request
-    let transformed_bytes = parse_and_transform(raw_http, "api.multicred.com", &store)
+    let transformed_bytes = parse_and_transform(raw_http, "api.multicred.com", &*store, &registry)
         .await
         .unwrap();
 
@@ -76,7 +92,8 @@ async fn test_parse_and_transform_with_single_field_credential() {
             .as_nanos()
     ));
 
-    let store = FileStore::new(temp_dir.clone()).await.unwrap();
+    let store = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap()) as Arc<dyn SecretStore>;
+    let registry = Registry::new(Arc::clone(&store));
 
     // Install a simple plugin
     let plugin_code = r#"
@@ -93,14 +110,25 @@ async fn test_parse_and_transform_with_single_field_credential() {
 
     store.set("plugin:simple-api", plugin_code.as_bytes()).await.unwrap();
 
+    // Add plugin to registry
+    let plugin_entry = PluginEntry {
+        name: "simple-api".to_string(),
+        hosts: vec!["api.simple.com".to_string()],
+        credential_schema: vec!["api_key".to_string()],
+    };
+    registry.add_plugin(&plugin_entry).await.unwrap();
+
     // Store credential using API pattern
     store.set("credential:simple-api:api_key", b"secret-api-key-123").await.unwrap();
+
+    // Add credential to registry
+    registry.add_credential(&CredentialEntry { plugin: "simple-api".to_string(), field: "api_key".to_string() }).await.unwrap();
 
     // Simulate an incoming HTTP request
     let raw_http = b"GET /api/data HTTP/1.1\r\nHost: api.simple.com\r\n\r\n";
 
     // Transform the request
-    let transformed_bytes = parse_and_transform(raw_http, "api.simple.com", &store)
+    let transformed_bytes = parse_and_transform(raw_http, "api.simple.com", &*store, &registry)
         .await
         .unwrap();
 
@@ -123,7 +151,8 @@ async fn test_parse_and_transform_missing_credentials() {
             .as_nanos()
     ));
 
-    let store = FileStore::new(temp_dir.clone()).await.unwrap();
+    let store = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap()) as Arc<dyn SecretStore>;
+    let registry = Registry::new(Arc::clone(&store));
 
     // Install a plugin
     let plugin_code = r#"
@@ -139,13 +168,22 @@ async fn test_parse_and_transform_missing_credentials() {
     "#;
 
     store.set("plugin:no-creds-api", plugin_code.as_bytes()).await.unwrap();
-    // Note: NOT storing credentials
+
+    // Add plugin to registry
+    let plugin_entry = PluginEntry {
+        name: "no-creds-api".to_string(),
+        hosts: vec!["api.nocreds.com".to_string()],
+        credential_schema: vec!["api_key".to_string()],
+    };
+    registry.add_plugin(&plugin_entry).await.unwrap();
+
+    // Note: NOT storing credentials or adding to registry
 
     // Simulate an incoming HTTP request
     let raw_http = b"GET /api/data HTTP/1.1\r\nHost: api.nocreds.com\r\n\r\n";
 
     // Transform should pass through unchanged
-    let transformed_bytes = parse_and_transform(raw_http, "api.nocreds.com", &store)
+    let transformed_bytes = parse_and_transform(raw_http, "api.nocreds.com", &*store, &registry)
         .await
         .unwrap();
 

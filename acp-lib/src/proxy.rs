@@ -8,6 +8,7 @@
 //! - Bearer token authentication
 
 use crate::error::{AcpError, Result};
+use crate::registry::Registry;
 use crate::storage::SecretStore;
 use crate::tls::CertificateAuthority;
 use crate::token_cache::TokenCache;
@@ -30,17 +31,20 @@ pub struct ProxyServer {
     token_cache: Arc<TokenCache>,
     /// Secret store for loading plugins and credentials
     store: Arc<dyn SecretStore>,
+    /// Registry for centralized metadata storage
+    registry: Arc<Registry>,
     /// TLS connector for upstream connections
     upstream_connector: TlsConnector,
 }
 
 impl ProxyServer {
-    /// Create a new ProxyServer instance with token cache and secret store
+    /// Create a new ProxyServer instance with token cache, secret store, and registry
     pub fn new(
         port: u16,
         ca: CertificateAuthority,
         token_cache: Arc<TokenCache>,
         store: Arc<dyn SecretStore>,
+        registry: Arc<Registry>,
     ) -> Result<Self> {
         // Configure upstream TLS connector with system CA trust
         let root_store = rustls::RootCertStore {
@@ -58,6 +62,7 @@ impl ProxyServer {
             ca: Arc::new(ca),
             token_cache,
             store,
+            registry,
             upstream_connector,
         })
     }
@@ -83,8 +88,9 @@ impl ProxyServer {
         }
 
         let token_cache = Arc::new(TokenCache::new(Arc::clone(&store)));
+        let registry = Arc::new(Registry::new(Arc::clone(&store)));
 
-        Self::new(port, ca, token_cache, store)
+        Self::new(port, ca, token_cache, store, registry)
     }
 
     /// Start the proxy server
@@ -106,10 +112,11 @@ impl ProxyServer {
             let ca = Arc::clone(&self.ca);
             let token_cache = Arc::clone(&self.token_cache);
             let store = Arc::clone(&self.store);
+            let registry = Arc::clone(&self.registry);
             let upstream_connector = self.upstream_connector.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, ca, token_cache, store, upstream_connector).await {
+                if let Err(e) = handle_connection(stream, ca, token_cache, store, registry, upstream_connector).await {
                     error!("Connection error: {}", e);
                 }
             });
@@ -123,6 +130,7 @@ async fn handle_connection(
     ca: Arc<CertificateAuthority>,
     token_cache: Arc<TokenCache>,
     store: Arc<dyn SecretStore>,
+    registry: Arc<Registry>,
     upstream_connector: TlsConnector,
 ) -> Result<()> {
     // Read the CONNECT request
@@ -182,7 +190,7 @@ async fn handle_connection(
     debug!("Upstream TLS established");
 
     // Bidirectional proxy with HTTP transformation
-    proxy_streams_with_transform(agent_stream, upstream_stream, &hostname, &*store).await?;
+    proxy_streams_with_transform(agent_stream, upstream_stream, &hostname, &*store, &*registry).await?;
 
     Ok(())
 }
@@ -312,6 +320,7 @@ async fn proxy_streams_with_transform<A, U>(
     mut upstream: U,
     hostname: &str,
     store: &dyn SecretStore,
+    registry: &Registry,
 ) -> Result<()>
 where
     A: AsyncReadExt + AsyncWriteExt + Unpin,
@@ -347,7 +356,7 @@ where
     }
 
     // Transform the request
-    let transformed_bytes = parse_and_transform(&buffer, hostname, store).await?;
+    let transformed_bytes = parse_and_transform(&buffer, hostname, store, registry).await?;
 
     // Forward transformed request to upstream
     upstream.write_all(&transformed_bytes).await

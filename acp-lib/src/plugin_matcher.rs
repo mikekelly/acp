@@ -4,44 +4,42 @@
 
 use crate::error::Result;
 use crate::plugin_runtime::PluginRuntime;
+use crate::registry::Registry;
 use crate::storage::SecretStore;
 use crate::types::ACPPlugin;
 
 /// Find a plugin that matches the given host
 ///
-/// Loads all plugins from storage and checks their match patterns.
+/// Uses the Registry to list plugin metadata, then loads and checks match patterns.
 /// Returns the first matching plugin, or None if no match is found.
 ///
 /// # Arguments
 /// * `host` - The hostname to match against (e.g., "api.example.com")
-/// * `store` - SecretStore to load plugins from
+/// * `store` - SecretStore to load plugin code from
+/// * `registry` - Registry to list available plugins
 ///
 /// # Returns
 /// Option containing the matching plugin, or None
 pub async fn find_matching_plugin<S: SecretStore + ?Sized>(
     host: &str,
     store: &S,
+    registry: &Registry,
 ) -> Result<Option<ACPPlugin>> {
-    // List all plugin keys (pattern: "plugin:*")
-    let all_keys = store.list("plugin:").await?;
-    let plugin_keys: Vec<String> = all_keys
-        .into_iter()
-        .filter(|k| k.starts_with("plugin:"))
-        .collect();
+    // Get all plugin entries from registry
+    let plugin_entries = registry.list_plugins().await?;
 
     // Load and check each plugin
-    for key in plugin_keys {
-        // Extract plugin name from key (remove "plugin:" prefix)
-        let plugin_name = &key[7..];
+    for entry in plugin_entries {
+        let key = format!("plugin:{}", entry.name);
 
-        // Load plugin metadata (don't need to execute it yet)
+        // Load plugin code from storage
         let plugin_code = store.get(&key).await?;
         if let Some(code_bytes) = plugin_code {
             let code = String::from_utf8_lossy(&code_bytes);
 
             // Create a runtime to extract metadata
             let mut runtime = PluginRuntime::new()?;
-            if let Ok(plugin) = runtime.load_plugin_from_code(plugin_name, &code) {
+            if let Ok(plugin) = runtime.load_plugin_from_code(&entry.name, &code) {
                 // Check if this plugin matches the host
                 if plugin.matches_host(host) {
                     return Ok(Some(plugin));
@@ -56,7 +54,9 @@ pub async fn find_matching_plugin<S: SecretStore + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::registry::{PluginEntry, Registry};
     use crate::storage::FileStore;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_find_matching_plugin_exact_match() {
@@ -68,7 +68,8 @@ mod tests {
                 .as_nanos()
         ));
 
-        let store = FileStore::new(temp_dir.clone()).await.unwrap();
+        let store = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap());
+        let registry = Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>);
 
         let plugin_code = r#"
         var plugin = {
@@ -81,7 +82,15 @@ mod tests {
 
         store.set("plugin:test", plugin_code.as_bytes()).await.unwrap();
 
-        let result = find_matching_plugin("api.example.com", &store).await.unwrap();
+        // Add to registry
+        let entry = PluginEntry {
+            name: "test".to_string(),
+            hosts: vec!["api.example.com".to_string()],
+            credential_schema: vec![],
+        };
+        registry.add_plugin(&entry).await.unwrap();
+
+        let result = find_matching_plugin("api.example.com", &*store, &registry).await.unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap().name, "test");
 
@@ -98,7 +107,8 @@ mod tests {
                 .as_nanos()
         ));
 
-        let store = FileStore::new(temp_dir.clone()).await.unwrap();
+        let store = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap());
+        let registry = Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>);
 
         let plugin_code = r#"
         var plugin = {
@@ -111,7 +121,15 @@ mod tests {
 
         store.set("plugin:s3", plugin_code.as_bytes()).await.unwrap();
 
-        let result = find_matching_plugin("bucket.s3.amazonaws.com", &store).await.unwrap();
+        // Add to registry
+        let entry = PluginEntry {
+            name: "s3".to_string(),
+            hosts: vec!["*.s3.amazonaws.com".to_string()],
+            credential_schema: vec![],
+        };
+        registry.add_plugin(&entry).await.unwrap();
+
+        let result = find_matching_plugin("bucket.s3.amazonaws.com", &*store, &registry).await.unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap().name, "s3");
 
@@ -128,7 +146,8 @@ mod tests {
                 .as_nanos()
         ));
 
-        let store = FileStore::new(temp_dir.clone()).await.unwrap();
+        let store = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap());
+        let registry = Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>);
 
         let plugin_code = r#"
         var plugin = {
@@ -141,7 +160,15 @@ mod tests {
 
         store.set("plugin:test", plugin_code.as_bytes()).await.unwrap();
 
-        let result = find_matching_plugin("api.other.com", &store).await.unwrap();
+        // Add to registry
+        let entry = PluginEntry {
+            name: "test".to_string(),
+            hosts: vec!["api.example.com".to_string()],
+            credential_schema: vec![],
+        };
+        registry.add_plugin(&entry).await.unwrap();
+
+        let result = find_matching_plugin("api.other.com", &*store, &registry).await.unwrap();
         assert!(result.is_none());
 
         tokio::fs::remove_dir_all(temp_dir).await.ok();

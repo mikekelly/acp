@@ -79,8 +79,14 @@ async fn main() -> anyhow::Result<()> {
     let registry = Arc::new(Registry::new(Arc::clone(&store)));
     tracing::info!("Registry initialized");
 
-    // Create ProxyServer with token cache and store
-    let proxy = ProxyServer::new(config.proxy_port, ca, Arc::clone(&token_cache), Arc::clone(&store))?;
+    // Create ProxyServer with token cache, store, and registry
+    let proxy = ProxyServer::new(
+        config.proxy_port,
+        ca,
+        Arc::clone(&token_cache),
+        Arc::clone(&store),
+        Arc::clone(&registry),
+    )?;
 
     // Spawn proxy server in background
     let proxy_port = config.proxy_port;

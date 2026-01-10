@@ -8,8 +8,10 @@
 //! 5. Serialize back to HTTP
 
 use acp_lib::plugin_runtime::PluginRuntime;
+use acp_lib::registry::{PluginEntry, Registry};
 use acp_lib::storage::{FileStore, SecretStore};
 use acp_lib::types::{ACPCredentials, ACPRequest};
+use std::sync::Arc;
 
 /// Test HTTP request parsing
 ///
@@ -83,7 +85,8 @@ async fn test_find_matching_plugin() {
             .as_nanos()
     ));
 
-    let store = FileStore::new(temp_dir.clone()).await.unwrap();
+    let store = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap()) as Arc<dyn SecretStore>;
+    let registry = Registry::new(Arc::clone(&store));
 
     // Create two plugins with different match patterns
     let plugin1_code = r#"
@@ -113,18 +116,31 @@ async fn test_find_matching_plugin() {
     store.set("plugin:exa-plugin", plugin1_code.as_bytes()).await.unwrap();
     store.set("plugin:s3-plugin", plugin2_code.as_bytes()).await.unwrap();
 
+    // Add plugins to registry
+    registry.add_plugin(&PluginEntry {
+        name: "exa-plugin".to_string(),
+        hosts: vec!["api.exa.ai".to_string()],
+        credential_schema: vec!["api_key".to_string()],
+    }).await.unwrap();
+
+    registry.add_plugin(&PluginEntry {
+        name: "s3-plugin".to_string(),
+        hosts: vec!["*.s3.amazonaws.com".to_string()],
+        credential_schema: vec!["access_key".to_string(), "secret_key".to_string()],
+    }).await.unwrap();
+
     // Find matching plugin for api.exa.ai
-    let matching_plugin = find_matching_plugin("api.exa.ai", &store).await.unwrap();
+    let matching_plugin = find_matching_plugin("api.exa.ai", &*store, &registry).await.unwrap();
     assert!(matching_plugin.is_some());
     assert_eq!(matching_plugin.unwrap().name, "exa-plugin");
 
     // Find matching plugin for bucket.s3.amazonaws.com
-    let matching_plugin = find_matching_plugin("bucket.s3.amazonaws.com", &store).await.unwrap();
+    let matching_plugin = find_matching_plugin("bucket.s3.amazonaws.com", &*store, &registry).await.unwrap();
     assert!(matching_plugin.is_some());
     assert_eq!(matching_plugin.unwrap().name, "s3-plugin");
 
     // No match for unknown host
-    let matching_plugin = find_matching_plugin("api.unknown.com", &store).await.unwrap();
+    let matching_plugin = find_matching_plugin("api.unknown.com", &*store, &registry).await.unwrap();
     assert!(matching_plugin.is_none());
 
     // Cleanup
@@ -142,6 +158,8 @@ async fn test_proxy_plugin_execution_flow() {
             .as_nanos()
     ));
 
+    let store_arc = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap()) as Arc<dyn SecretStore>;
+    let registry = Registry::new(Arc::clone(&store_arc));
     let store = FileStore::new(temp_dir.clone()).await.unwrap();
 
     // Install a plugin
@@ -159,6 +177,13 @@ async fn test_proxy_plugin_execution_flow() {
 
     store.set("plugin:test-api", plugin_code.as_bytes()).await.unwrap();
 
+    // Add plugin to registry
+    registry.add_plugin(&PluginEntry {
+        name: "test-api".to_string(),
+        hosts: vec!["api.example.com".to_string()],
+        credential_schema: vec!["api_key".to_string()],
+    }).await.unwrap();
+
     // Store credentials
     let mut creds = ACPCredentials::new();
     creds.set("api_key", "secret123");
@@ -169,7 +194,7 @@ async fn test_proxy_plugin_execution_flow() {
     let request = parse_http_request(raw_request).unwrap();
 
     // Find matching plugin
-    let plugin = find_matching_plugin("api.example.com", &store).await.unwrap();
+    let plugin = find_matching_plugin("api.example.com", &*store_arc, &registry).await.unwrap();
     assert!(plugin.is_some());
     let plugin = plugin.unwrap();
 
@@ -210,7 +235,8 @@ async fn test_complete_proxy_transform_pipeline() {
             .as_nanos()
     ));
 
-    let store = FileStore::new(temp_dir.clone()).await.unwrap();
+    let store = Arc::new(FileStore::new(temp_dir.clone()).await.unwrap()) as Arc<dyn SecretStore>;
+    let registry = Registry::new(Arc::clone(&store));
 
     // Install a simple plugin
     let plugin_code = r#"
@@ -228,14 +254,27 @@ async fn test_complete_proxy_transform_pipeline() {
 
     store.set("plugin:test-transform", plugin_code.as_bytes()).await.unwrap();
 
+    // Add plugin to registry
+    registry.add_plugin(&PluginEntry {
+        name: "test-transform".to_string(),
+        hosts: vec!["api.test.com".to_string()],
+        credential_schema: vec!["secret".to_string()],
+    }).await.unwrap();
+
     // Store credentials using the new pattern: credential:{plugin}:{field_name}
     store.set("credential:test-transform:secret", b"my-secret-value").await.unwrap();
+
+    // Add credential to registry
+    registry.add_credential(&acp_lib::registry::CredentialEntry {
+        plugin: "test-transform".to_string(),
+        field: "secret".to_string(),
+    }).await.unwrap();
 
     // Simulate an incoming HTTP request (as raw bytes)
     let raw_http = b"GET /api/data HTTP/1.1\r\nHost: api.test.com\r\nUser-Agent: TestAgent/1.0\r\n\r\n";
 
     // Transform the request using the proxy pipeline
-    let transformed_bytes = parse_and_transform(raw_http, "api.test.com", &store)
+    let transformed_bytes = parse_and_transform(raw_http, "api.test.com", &*store, &registry)
         .await
         .unwrap();
 
