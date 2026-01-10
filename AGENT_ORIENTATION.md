@@ -62,6 +62,14 @@ cargo run --bin acp-server  # Run server
 - **Token management**: Full token value only returned on creation (via `token` field); list endpoint shows prefix only
 - **State management**: `ApiState` holds server start time, ports, password hash, tokens, and activity log
 
+## CLI (Phase 7)
+- **Password input**: Uses `rpassword` crate for hidden password input (no echo)
+- **Password hashing**: Client-side SHA512 hashing via `sha2` crate before sending to API
+- **HTTP client**: Built with `reqwest` 0.12, handles JSON requests/responses
+- **Server URL**: Configurable via `--server` flag (default: http://localhost:9080)
+- **Command structure**: Uses clap derive macros with nested subcommands (e.g., `token create`)
+- **Error handling**: Returns exit code 1 on errors, prints to stderr
+
 ## Gotchas
 - **Wildcard matching is single-level only**: The pattern `*.s3.amazonaws.com` matches `bucket.s3.amazonaws.com` but rejects both `s3.amazonaws.com` (no subdomain) and `evil.com.s3.amazonaws.com` (multiple levels)
 - **Token serialization**: `AgentToken` uses `#[serde(skip_serializing)]` on the `token` field to prevent accidental exposure in JSON responses
