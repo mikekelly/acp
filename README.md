@@ -300,6 +300,8 @@ This is a fundamentally different security posture than giving credentials to an
 
 **Agent tokens:** Tokens are for **tracking and audit**, not strong authentication. Any process that can read the token (other agents, scripts, humans with shell access) can use it. The real security boundary is the credential store - tokens just help you see which agent made which request.
 
+**CLI attack surface:** When you use the CLI to manage credentials (`acp set`, `acp init`), you enter secrets interactively via secure terminal input (no echo, never stored). The CLI immediately hashes these with SHA512 before transmitting to the management API. The plaintext exists in the CLI process memory only briefly (milliseconds). Current transport from CLI to management API is HTTP on localhost. HTTPS using the existing `ca.crt` is on the roadmap for defense in depth. Remaining attack vectors all require host compromise: memory scraping during the brief plaintext window, or keylogger/terminal interception. These are edge cases requiring privilege escalation - and if an attacker has that level of access, they could access the credential store directly anyway.
+
 Plugins are simple JavaScript:
 
 ```javascript
