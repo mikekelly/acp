@@ -4,6 +4,8 @@
 /// used by both the `acp` CLI and `acp-server` daemon.
 pub mod error;
 pub mod http_utils;
+#[cfg(target_os = "macos")]
+mod keychain_impl;
 pub mod plugin_matcher;
 pub mod plugin_runtime;
 pub mod proxy;

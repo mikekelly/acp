@@ -164,6 +164,7 @@ impl FileStore {
 #[cfg(target_os = "macos")]
 pub struct KeychainStore {
     service_name: String,
+    access_group: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -174,6 +175,21 @@ impl KeychainStore {
     pub fn new(service_name: impl Into<String>) -> Result<Self> {
         Ok(Self {
             service_name: service_name.into(),
+            access_group: None,
+        })
+    }
+
+    /// Create a new KeychainStore with an access group
+    ///
+    /// The access group allows keychain items to survive binary re-signing.
+    /// Must be prefixed with Team ID (e.g., "3R44BTH39W.com.acp.secrets").
+    pub fn new_with_access_group(
+        service_name: impl Into<String>,
+        access_group: impl Into<String>,
+    ) -> Result<Self> {
+        Ok(Self {
+            service_name: service_name.into(),
+            access_group: Some(access_group.into()),
         })
     }
 }
@@ -182,56 +198,28 @@ impl KeychainStore {
 #[async_trait]
 impl SecretStore for KeychainStore {
     async fn set(&self, key: &str, value: &[u8]) -> Result<()> {
-        use security_framework::passwords::{delete_generic_password, set_generic_password};
-
-        // Delete existing entry first (if any) to avoid conflicts
-        let _ = delete_generic_password(&self.service_name, key);
-
-        // Set the new password
-        set_generic_password(&self.service_name, key, value)
-            .map_err(|e| crate::AcpError::storage(format!("Keychain set failed: {}", e)))?;
-
-        Ok(())
+        crate::keychain_impl::set_generic_password_with_access_group(
+            &self.service_name,
+            key,
+            value,
+            self.access_group.as_deref(),
+        )
     }
 
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        use security_framework::passwords::get_generic_password;
-
-        match get_generic_password(&self.service_name, key) {
-            Ok(password) => Ok(Some(password)),
-            Err(e) => {
-                // Check if it's a "not found" error
-                let err_str = format!("{:?}", e);
-                if err_str.contains("ItemNotFound") || err_str.contains("-25300") {
-                    Ok(None)
-                } else {
-                    Err(crate::AcpError::storage(format!(
-                        "Keychain get failed: {}",
-                        e
-                    )))
-                }
-            }
-        }
+        crate::keychain_impl::get_generic_password_with_access_group(
+            &self.service_name,
+            key,
+            self.access_group.as_deref(),
+        )
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
-        use security_framework::passwords::delete_generic_password;
-
-        match delete_generic_password(&self.service_name, key) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                // Check if it's a "not found" error (idempotent)
-                let err_str = format!("{:?}", e);
-                if err_str.contains("ItemNotFound") || err_str.contains("-25300") {
-                    Ok(())
-                } else {
-                    Err(crate::AcpError::storage(format!(
-                        "Keychain delete failed: {}",
-                        e
-                    )))
-                }
-            }
-        }
+        crate::keychain_impl::delete_generic_password_with_access_group(
+            &self.service_name,
+            key,
+            self.access_group.as_deref(),
+        )
     }
 }
 
@@ -262,7 +250,10 @@ pub async fn create_store(data_dir: Option<PathBuf>) -> Result<Box<dyn SecretSto
             // Platform-specific default
             #[cfg(target_os = "macos")]
             {
-                let store = KeychainStore::new("com.acp.credentials")?;
+                let store = KeychainStore::new_with_access_group(
+                    "com.acp.credentials",
+                    "3R44BTH39W.com.acp.secrets",
+                )?;
                 Ok(Box::new(store))
             }
 
@@ -468,5 +459,35 @@ mod tests {
 
         // Cleanup
         let _ = store.delete("test:binary").await;
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_keychain_store_with_access_group() {
+        // Test that KeychainStore can be created with an access group
+        let service_name = format!("com.acp.test.{}", std::process::id());
+        let access_group = "3R44BTH39W.com.acp.secrets";
+
+        let store = KeychainStore::new_with_access_group(&service_name, access_group)
+            .expect("create KeychainStore with access group");
+
+        // Verify the store has the access group set
+        assert_eq!(store.access_group.as_deref(), Some(access_group));
+
+        // Test operations with access group
+        store
+            .set("test:access_group", b"value1")
+            .await
+            .expect("set with access group should succeed");
+
+        let value = store
+            .get("test:access_group")
+            .await
+            .expect("get with access group should succeed")
+            .expect("value should exist");
+        assert_eq!(value, b"value1");
+
+        // Cleanup
+        let _ = store.delete("test:access_group").await;
     }
 }

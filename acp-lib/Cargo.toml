@@ -31,6 +31,9 @@ tracing.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework.workspace = true
+core-foundation = "0.9"
+core-foundation-sys = "0.8"
+security-framework-sys = "2.15"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
