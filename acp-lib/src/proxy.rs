@@ -11,7 +11,6 @@ use crate::error::{AcpError, Result};
 use crate::registry::Registry;
 use crate::storage::SecretStore;
 use crate::tls::CertificateAuthority;
-use crate::token_cache::TokenCache;
 use crate::types::AgentToken;
 use rustls::pki_types::CertificateDer;
 use rustls::ServerConfig;
@@ -27,8 +26,6 @@ pub struct ProxyServer {
     port: u16,
     /// Certificate Authority for dynamic cert generation
     ca: Arc<CertificateAuthority>,
-    /// Token cache for authentication
-    token_cache: Arc<TokenCache>,
     /// Secret store for loading plugins and credentials
     store: Arc<dyn SecretStore>,
     /// Registry for centralized metadata storage
@@ -38,11 +35,10 @@ pub struct ProxyServer {
 }
 
 impl ProxyServer {
-    /// Create a new ProxyServer instance with token cache, secret store, and registry
+    /// Create a new ProxyServer instance with secret store and registry
     pub fn new(
         port: u16,
         ca: CertificateAuthority,
-        token_cache: Arc<TokenCache>,
         store: Arc<dyn SecretStore>,
         registry: Arc<Registry>,
     ) -> Result<Self> {
@@ -60,7 +56,6 @@ impl ProxyServer {
         Ok(Self {
             port,
             ca: Arc::new(ca),
-            token_cache,
             store,
             registry,
             upstream_connector,
@@ -71,6 +66,7 @@ impl ProxyServer {
     #[cfg(test)]
     pub async fn new_from_vec_async(port: u16, ca: CertificateAuthority, tokens: Vec<AgentToken>) -> Result<Self> {
         use crate::storage::FileStore;
+        use crate::registry::TokenEntry;
 
         // Create a temporary FileStore for testing
         let temp_dir = tempfile::tempdir().expect("create temp dir");
@@ -80,17 +76,24 @@ impl ProxyServer {
                 .expect("create FileStore"),
         ) as Arc<dyn SecretStore>;
 
-        // Pre-populate storage with tokens
+        let registry = Arc::new(Registry::new(Arc::clone(&store)));
+
+        // Pre-populate storage with tokens in new format (token:{value})
         for token in &tokens {
             let token_json = serde_json::to_vec(&token).expect("serialize token");
-            let store_key = format!("token:{}", token.id);
+            let store_key = format!("token:{}", token.token);
             store.set(&store_key, &token_json).await.expect("store token");
+
+            // Add to registry
+            let entry = TokenEntry {
+                token_value: token.token.clone(),
+                name: token.name.clone(),
+                created_at: token.created_at,
+            };
+            registry.add_token(&entry).await.expect("add token to registry");
         }
 
-        let registry = Arc::new(Registry::new(Arc::clone(&store)));
-        let token_cache = Arc::new(TokenCache::new(Arc::clone(&store), Arc::clone(&registry)));
-
-        Self::new(port, ca, token_cache, store, registry)
+        Self::new(port, ca, store, registry)
     }
 
     /// Start the proxy server
@@ -110,13 +113,12 @@ impl ProxyServer {
             debug!("Accepted connection from {}", addr);
 
             let ca = Arc::clone(&self.ca);
-            let token_cache = Arc::clone(&self.token_cache);
             let store = Arc::clone(&self.store);
             let registry = Arc::clone(&self.registry);
             let upstream_connector = self.upstream_connector.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, ca, token_cache, store, registry, upstream_connector).await {
+                if let Err(e) = handle_connection(stream, ca, store, registry, upstream_connector).await {
                     error!("Connection error: {}", e);
                 }
             });
@@ -128,7 +130,6 @@ impl ProxyServer {
 async fn handle_connection(
     stream: TcpStream,
     ca: Arc<CertificateAuthority>,
-    token_cache: Arc<TokenCache>,
     store: Arc<dyn SecretStore>,
     registry: Arc<Registry>,
     upstream_connector: TlsConnector,
@@ -163,7 +164,7 @@ async fn handle_connection(
     }
 
     // Validate authentication
-    let _agent_token = validate_auth(&headers, &token_cache).await?;
+    let _agent_token = validate_auth(&headers, &registry, &*store).await?;
 
     // Get the underlying stream back from BufReader
     // The BufReader may have buffered bytes that are part of the TLS handshake,
@@ -215,7 +216,8 @@ fn parse_connect_request(line: &str) -> Result<String> {
 /// Validate Proxy-Authorization header
 async fn validate_auth(
     headers: &[String],
-    token_cache: &TokenCache,
+    registry: &Registry,
+    store: &dyn SecretStore,
 ) -> Result<AgentToken> {
     for header in headers {
         let header = header.trim();
@@ -223,9 +225,16 @@ async fn validate_auth(
             let value = header[20..].trim(); // Skip "proxy-authorization:"
 
             if let Some(bearer_token) = value.strip_prefix("Bearer ") {
-                // Check token cache
-                if let Some(token) = token_cache.get_by_token(bearer_token).await? {
-                    return Ok(token);
+                // Check if token exists in registry
+                let tokens = registry.list_tokens().await?;
+                if tokens.iter().any(|t| t.token_value == bearer_token) {
+                    // Load full token from storage
+                    let token_key = format!("token:{}", bearer_token);
+                    if let Some(token_bytes) = store.get(&token_key).await? {
+                        if let Ok(token) = serde_json::from_slice::<AgentToken>(&token_bytes) {
+                            return Ok(token);
+                        }
+                    }
                 }
             }
 
@@ -467,6 +476,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_auth_valid() {
         use crate::storage::FileStore;
+        use crate::registry::TokenEntry;
 
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let store = Arc::new(
@@ -476,19 +486,32 @@ mod tests {
         ) as Arc<dyn crate::storage::SecretStore>;
 
         let registry = Arc::new(crate::registry::Registry::new(Arc::clone(&store)));
-        let token_cache = TokenCache::new(Arc::clone(&store), Arc::clone(&registry));
-        let token = token_cache.create("Test Agent").await.expect("create token");
+
+        // Create token and store it directly
+        let token = AgentToken::new("Test Agent");
         let token_value = token.token.clone();
+        let token_json = serde_json::to_vec(&token).expect("serialize token");
+        let store_key = format!("token:{}", token.token);
+        store.set(&store_key, &token_json).await.expect("store token");
+
+        // Add to registry
+        let entry = TokenEntry {
+            token_value: token.token.clone(),
+            name: token.name.clone(),
+            created_at: token.created_at,
+        };
+        registry.add_token(&entry).await.expect("add token to registry");
 
         let headers = vec![format!("Proxy-Authorization: Bearer {}", token_value)];
 
-        let result = validate_auth(&headers, &token_cache).await;
+        let result = validate_auth(&headers, &registry, &*store).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_validate_auth_invalid_token() {
         use crate::storage::FileStore;
+        use crate::registry::TokenEntry;
 
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let store = Arc::new(
@@ -498,12 +521,24 @@ mod tests {
         ) as Arc<dyn crate::storage::SecretStore>;
 
         let registry = Arc::new(crate::registry::Registry::new(Arc::clone(&store)));
-        let token_cache = TokenCache::new(Arc::clone(&store), Arc::clone(&registry));
-        let _token = token_cache.create("Test Agent").await.expect("create token");
+
+        // Create token and store it directly
+        let token = AgentToken::new("Test Agent");
+        let token_json = serde_json::to_vec(&token).expect("serialize token");
+        let store_key = format!("token:{}", token.token);
+        store.set(&store_key, &token_json).await.expect("store token");
+
+        // Add to registry
+        let entry = TokenEntry {
+            token_value: token.token.clone(),
+            name: token.name.clone(),
+            created_at: token.created_at,
+        };
+        registry.add_token(&entry).await.expect("add token to registry");
 
         let headers = vec!["Proxy-Authorization: Bearer wrong-token".to_string()];
 
-        let result = validate_auth(&headers, &token_cache).await;
+        let result = validate_auth(&headers, &registry, &*store).await;
         assert!(result.is_err());
     }
 
@@ -519,10 +554,9 @@ mod tests {
         ) as Arc<dyn crate::storage::SecretStore>;
 
         let registry = Arc::new(crate::registry::Registry::new(Arc::clone(&store)));
-        let token_cache = TokenCache::new(Arc::clone(&store), Arc::clone(&registry));
         let headers = vec!["Host: example.com".to_string()];
 
-        let result = validate_auth(&headers, &token_cache).await;
+        let result = validate_auth(&headers, &registry, &*store).await;
         assert!(result.is_err());
     }
 
