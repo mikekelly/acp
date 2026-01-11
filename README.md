@@ -39,6 +39,96 @@ curl -x http://localhost:9443 \
 
 The agent sends requests without credentials - ACP injects them automatically.
 
+## Get Started (Linux)
+
+### 1. Download and install binaries
+
+```bash
+# Download the latest release (adjust version and arch as needed)
+curl -LO https://github.com/mikekelly/acp/releases/latest/download/acp-linux-amd64.tar.gz
+tar -xzf acp-linux-amd64.tar.gz
+sudo mv acp acp-server /usr/local/bin/
+```
+
+### 2. Create a dedicated user and directories
+
+```bash
+# Create acp user (no login shell, no home directory)
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin acp
+
+# Create data directory with restricted permissions
+sudo mkdir -p /var/lib/acp
+sudo chown acp:acp /var/lib/acp
+sudo chmod 700 /var/lib/acp
+```
+
+### 3. Create systemd service
+
+```bash
+sudo tee /etc/systemd/system/acp-server.service > /dev/null <<EOF
+[Unit]
+Description=Agent Credential Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=acp
+Group=acp
+Environment=ACP_DATA_DIR=/var/lib/acp
+ExecStart=/usr/local/bin/acp-server
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/acp
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+### 4. Start the service
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable acp-server
+sudo systemctl start acp-server
+
+# Check status
+sudo systemctl status acp-server
+```
+
+### 5. Initialize and configure
+
+```bash
+# Initialize with a password
+acp init
+
+# Install a plugin
+acp install mikekelly/exa-acp
+
+# Set your API key
+acp set mikekelly/exa-acp:apiKey
+
+# Create a token for your agent
+acp token create my-agent
+```
+
+### 6. Use the proxy
+
+```bash
+curl -x http://localhost:9443 \
+     --cacert ~/.config/acp/ca.crt \
+     --proxy-header "Proxy-Authorization: Bearer acp_xxxxxxxxxxxx" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "latest AI news", "numResults": 3}' \
+     https://api.exa.ai/search
+```
+
 ---
 
 ## The Problem
