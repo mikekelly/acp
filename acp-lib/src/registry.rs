@@ -47,6 +47,9 @@ pub struct RegistryData {
     pub tokens: Vec<TokenEntry>,
     pub plugins: Vec<PluginEntry>,
     pub credentials: Vec<CredentialEntry>,
+    /// Argon2 hash of the admin password (set during init)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password_hash: Option<String>,
 }
 
 impl Default for RegistryData {
@@ -56,6 +59,7 @@ impl Default for RegistryData {
             tokens: Vec::new(),
             plugins: Vec::new(),
             credentials: Vec::new(),
+            password_hash: None,
         }
     }
 }
@@ -188,6 +192,31 @@ impl Registry {
     pub async fn list_credentials(&self) -> Result<Vec<CredentialEntry>> {
         let data = self.load().await?;
         Ok(data.credentials)
+    }
+
+    // Password hash operations
+
+    /// Set the password hash in the registry
+    ///
+    /// Loads the registry, sets the password_hash field, and saves.
+    pub async fn set_password_hash(&self, hash: &str) -> Result<()> {
+        let mut data = self.load().await?;
+        data.password_hash = Some(hash.to_string());
+        self.save(&data).await
+    }
+
+    /// Get the password hash from the registry
+    ///
+    /// Returns None if no password has been set (server not initialized).
+    pub async fn get_password_hash(&self) -> Result<Option<String>> {
+        let data = self.load().await?;
+        Ok(data.password_hash)
+    }
+
+    /// Check if the server has been initialized (password hash is set)
+    pub async fn is_initialized(&self) -> Result<bool> {
+        let data = self.load().await?;
+        Ok(data.password_hash.is_some())
     }
 
     // Migration support
@@ -377,6 +406,7 @@ mod tests {
                 plugin: "exa".to_string(),
                 field: "api_key".to_string(),
             }],
+            password_hash: Some("argon2hash123".to_string()),
         };
 
         // Serialize to JSON
@@ -496,6 +526,7 @@ mod tests {
                 plugin: "exa".to_string(),
                 field: "api_key".to_string(),
             }],
+            password_hash: None,
         };
 
         // Save
@@ -536,6 +567,7 @@ mod tests {
             }],
             plugins: vec![],
             credentials: vec![],
+            password_hash: None,
         };
         registry.save(&data1).await.expect("save should succeed");
 
@@ -556,6 +588,7 @@ mod tests {
             ],
             plugins: vec![],
             credentials: vec![],
+            password_hash: None,
         };
         registry.save(&data2).await.expect("save should succeed");
 

@@ -143,8 +143,14 @@ async fn main() -> anyhow::Result<()> {
         config.proxy_port,
         config.api_port,
         Arc::clone(&store),
-        registry,
+        Arc::clone(&registry),
     );
+
+    // Load persisted password hash from registry (if server was previously initialized)
+    if let Ok(Some(hash)) = registry.get_password_hash().await {
+        api_state.set_password_hash(hash).await;
+        tracing::info!("Loaded password hash from registry");
+    }
 
     // Build the API router
     let app = api::create_router(api_state);

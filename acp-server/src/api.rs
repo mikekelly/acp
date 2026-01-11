@@ -295,12 +295,16 @@ async fn init(
     use argon2::password_hash::{rand_core::OsRng, SaltString};
     use argon2::{Argon2, PasswordHasher};
 
-    // Check if already initialized
+    // Check if already initialized (check both memory and registry)
     {
         let hash = state.password_hash.read().await;
         if hash.is_some() {
             return Err((StatusCode::CONFLICT, "Server already initialized".to_string()));
         }
+    }
+    // Also check registry for persisted password
+    if state.registry.is_initialized().await.unwrap_or(false) {
+        return Err((StatusCode::CONFLICT, "Server already initialized".to_string()));
     }
 
     // Parse request
@@ -315,8 +319,12 @@ async fn init(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to hash password: {}", e)))?
         .to_string();
 
-    // Store password hash
-    state.set_password_hash(password_hash).await;
+    // Store password hash in memory
+    state.set_password_hash(password_hash.clone()).await;
+
+    // Persist password hash to registry
+    state.registry.set_password_hash(&password_hash).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save password hash: {}", e)))?;
 
     // Load the existing CA from storage (it was already generated at server startup)
     let ca_cert_pem = state.store
