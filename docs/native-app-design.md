@@ -83,25 +83,32 @@ The agent never sees credentials—they're isolated in the proxy's secure storag
 
 | Platform | Mechanism | What's Stored | Isolation |
 |----------|-----------|---------------|-----------|
-| **macOS** | Keychain via `security-framework` | Password hash, CA key, plugins, config, credentials | Code signing ACLs - only signed ACP binary can read |
-| **Linux** | File (`/var/lib/acp/`) | Password hash, CA key, plugins, config, credentials | Unix permissions - `acp:acp` user, mode 700 |
+| **macOS** | Keychain via `security-framework` | Password hash, CA key/cert, plugins, credentials, tokens, registry | OS-level Keychain protection |
+| **Linux** | File (`/var/lib/acp/`) | Password hash, CA key/cert, plugins, credentials, tokens, registry | Unix permissions - files owned by running user, mode 0600 |
+| **Docker** | File (`/var/lib/acp/`) | Password hash, CA key/cert, plugins, credentials, tokens, registry | Container isolation + volume encryption |
 
-```rust
-pub enum SecureStore {
-    Keychain,  // macOS - everything in Keychain
-    File,      // Linux - everything in /var/lib/acp/
-}
-```
+**Implementation:**
+- `SecretStore` trait with `FileStore` and `KeychainStore` implementations
+- `create_store()` factory selects platform-appropriate backend
+- `TokenCache` provides invalidate-on-write caching over `SecretStore`
+- `Registry` pattern for metadata (stored at key `_registry`)
 
-**macOS:** Everything stored in Keychain, protected by code signing ACLs. Agents cannot:
-- Read credentials
-- Read or modify plugins
-- Read or modify config
-- Access the password hash
+**macOS:** Everything stored in system Keychain. Benefits:
+- OS-level credential protection
+- Survives app uninstall/reinstall
+- Integration with macOS security model
+- Agents running as your user cannot access Keychain entries without user approval
 
-**Linux desktop:** Everything in `/var/lib/acp/`, owned by `acp` system user. Agents (running as your user) cannot access any of it.
+**Linux desktop:** Everything in `/var/lib/acp/` when running as systemd service:
+- Files owned by `acp` system user
+- Mode 0600 (owner read/write only)
+- Agents running as your user cannot access `acp` user's files
 
-**Linux container:** Everything in `--data-dir` (e.g., `/data`). Infrastructure provides encryption at rest. No dedicated user needed - container isolation is sufficient.
+**Linux container:** Everything in `/var/lib/acp/` (volume mount):
+- Container runs as non-root user `acp` (UID 1000)
+- Files have mode 0600
+- Volume must be mounted (enforced at startup)
+- Infrastructure provides encryption at rest
 
 **Why no application-level encryption?**
 
@@ -384,20 +391,18 @@ GET  /status                     → { version, uptime, proxy_port, api_port }
 # CLI computes SHA512(password) and sends that
 # Server verifies SHA512 hash against stored Argon2(SHA512(password))
 
-GET  /plugins                    → [{ name, sha, match[], installed_at }]
-POST /plugins/install            → { url, password } → { name, sha, match[] } (preview)
-POST /plugins/install/confirm    → { sha, password } → { ok }
-DELETE /plugins/:name            → { password }
+GET  /plugins                    → [{ name, repo, match[], installed_at }]
+POST /plugins                    → { repo, password_hash } → { name, match[] }
+DELETE /plugins/:name            → { password_hash }
 
-POST /credentials/:plugin/:key   → { value, password }
-DELETE /credentials/:plugin/:key → { password }
+POST /credentials/:plugin/:key   → { value, password_hash }
+DELETE /credentials/:plugin/:key → { password_hash }
 
 GET  /tokens                     → [{ id, name, prefix, created_at }]
-POST /tokens                     → { name, password } → { id, name, token }
-DELETE /tokens/:id               → { password }
+POST /tokens                     → { name, password_hash } → { id, name, token }
+DELETE /tokens/:id               → { password_hash }
 
-GET  /activity                   → [{ ts, agent, method, host, path, status, latency_ms }]
-GET  /activity/stream            → SSE stream (requires password query param)
+GET  /activity                   → [{ timestamp, token_id, method, host, path, status_code, duration_ms }]
 ```
 
 ## CLI
@@ -426,25 +431,25 @@ The password is:
 acp status                          Check if server is running
 
 # Password required - Setup
-acp init [--ca-path <path>]         First-time setup (set password, generate CA)
-                                    Default CA path: ~/.config/acp/ca.crt
+acp init                            First-time setup (set password, generate CA)
+                                    CA written to ~/.config/acp/ca.crt
 
 # Password required - Plugins
 acp plugins                         List installed plugins
-acp install <name>                  Install bundled plugin (e.g., "exa")
+acp install <user/repo>             Install plugin from GitHub (e.g., mikekelly/exa-acp)
 acp uninstall <name>                Remove plugin
 
 # Password required - Credentials
 acp set <plugin>:<key>              Set credential (interactive value input)
 
 # Password required - Agent Tokens
-acp tokens                          List agent tokens (shows prefixes only)
-acp token create <name>             Create new agent token
-acp token revoke <id>               Revoke agent token
+acp token                           Manage agent tokens (subcommand)
+  acp token create <name>           Create new agent token
+  acp token list                    List agent tokens (shows prefixes only)
+  acp token delete <id>             Delete agent token
 
 # Password required - Monitoring
-acp activity                        Show recent activity
-acp activity --follow               Stream activity in real-time
+acp activity                        View activity logs
 ```
 
 ### Plugin Naming
@@ -532,35 +537,63 @@ Only `ACP_SERVER` can be set via environment. The password is always entered int
 ### macOS
 
 ```bash
-# Install via Homebrew (future)
-brew install acp
+# Install via Homebrew
+brew tap mikekelly/acp
+brew install acp-server
 
-# Or download binary
-curl -L https://github.com/.../acp-darwin-arm64.tar.gz | tar xz
+# Start as background service
+brew services start acp-server
+
+# Initialize (generates CA, sets password)
+acp init
+
+# Check status
+acp status
+```
+
+**Manual installation:**
+```bash
+# Download binary (adjust version and arch as needed)
+curl -LO https://github.com/mikekelly/agent-credential-proxy/releases/latest/download/acp-darwin-arm64.tar.gz
+tar -xzf acp-darwin-arm64.tar.gz
 sudo mv acp acp-server /usr/local/bin/
 
-# Initialize (generates CA, admin token, starts server)
-acp-server init
+# Run server in background
+acp-server &
 
-# Server runs in foreground, or install as LaunchAgent
-acp-server install  # Creates ~/Library/LaunchAgents/com.acp.server.plist
+# Initialize
+acp init
 ```
 
 ### Linux
 
+See the [README](../README.md#get-started-linux) for detailed Linux installation instructions.
+
+**Quick summary:**
 ```bash
-# Download and install
-curl -L https://github.com/.../acp-linux-amd64.tar.gz | tar xz
+# Download installer script
+curl -LO https://raw.githubusercontent.com/mikekelly/agent-credential-proxy/main/install.sh
+chmod +x install.sh
+
+# Run installer (downloads binaries, creates user, sets up systemd)
 sudo ./install.sh
 
-# install.sh does:
-# 1. Creates 'acp' system user
-# 2. Copies binaries to /usr/local/bin/
-# 3. Creates /var/lib/acp/ owned by acp:acp
-# 4. Installs systemd service
-# 5. Runs 'acp-server init' as acp user
-# 6. Prints admin token for user to save
+# Start the service
+sudo systemctl start acp-server
+sudo systemctl enable acp-server
+
+# Initialize
+acp init
 ```
+
+**The installer:**
+1. Detects architecture (x86_64 or aarch64)
+2. Downloads binaries from GitHub releases OR builds from source
+3. Creates 'acp' system user (no login shell)
+4. Creates `/var/lib/acp/` with restricted permissions (0700)
+5. Installs binaries to `/usr/local/bin/`
+6. Creates systemd service file
+7. Enables and starts the service
 
 **Manual installation:**
 ```bash
@@ -572,65 +605,113 @@ sudo mkdir -p /var/lib/acp
 sudo chown acp:acp /var/lib/acp
 sudo chmod 700 /var/lib/acp
 
-# Install binaries
-sudo cp acp acp-server /usr/local/bin/
+# Download and install binaries
+curl -LO https://github.com/mikekelly/agent-credential-proxy/releases/latest/download/acp-linux-amd64.tar.gz
+tar -xzf acp-linux-amd64.tar.gz
+sudo mv acp acp-server /usr/local/bin/
 
-# Initialize
-sudo -u acp acp-server init --data-dir /var/lib/acp
-# Save the admin token printed here!
+# Create systemd service
+sudo tee /etc/systemd/system/acp-server.service > /dev/null <<EOF
+[Unit]
+Description=Agent Credential Proxy
+After=network.target
 
-# Install and start systemd service
-sudo cp acp-server.service /etc/systemd/system/
+[Service]
+Type=simple
+User=acp
+Group=acp
+Environment=ACP_DATA_DIR=/var/lib/acp
+ExecStart=/usr/local/bin/acp-server
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/acp
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start service
+sudo systemctl daemon-reload
 sudo systemctl enable --now acp-server
+
+# Initialize (as your user, not root)
+acp init
 ```
 
 ### Container
 
-No installation needed - just run the binary with `--data-dir`:
+See the [README](../README.md#docker-for-containerized-agents) for detailed Docker instructions.
 
-```dockerfile
-FROM rust:alpine AS builder
-# ... build ...
+**Quick start:**
+```bash
+# Run with persistent volume (REQUIRED - will fail without it)
+docker run -d \
+  --name acp-server \
+  -v acp-data:/var/lib/acp \
+  -p 9443:9443 \
+  -p 9080:9080 \
+  mikekelly321/acp:latest
 
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /app/acp-server /usr/local/bin/
+# Initialize (first time only)
+docker exec -it acp-server acp init
 
-EXPOSE 9443 9080
-VOLUME /data
-
-ENTRYPOINT ["acp-server", "run", "--data-dir", "/data"]
+# Or from host if acp CLI is installed
+acp init
 ```
 
+**Docker Compose (recommended):**
 ```yaml
-# docker-compose.yaml
 services:
-  acp:
-    image: acp-server:latest
+  acp-server:
+    image: mikekelly321/acp:latest
+    volumes:
+      - acp-data:/var/lib/acp
     ports:
       - "9443:9443"
       - "9080:9080"
-    volumes:
-      - acp-data:/data
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9080/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Your containerized agent
+  my-agent:
+    image: your-agent-image
     environment:
-      - ACP_ADMIN_TOKEN=${ACP_ADMIN_TOKEN}
+      - HTTP_PROXY=http://acp-server:9443
+      - HTTPS_PROXY=http://acp-server:9443
+    networks:
+      - agent-network
+    depends_on:
+      acp-server:
+        condition: service_healthy
 
 volumes:
   acp-data:
-    # Use encrypted volume driver in production
+
+networks:
+  agent-network:
 ```
 
-**First run:**
-```bash
-# Initialize (generates CA, prints admin token)
-docker run -v acp-data:/data acp-server init --data-dir /data
-# Save the admin token!
+**Volume enforcement:**
+- Container REQUIRES a volume mount for `/var/lib/acp`
+- Without volume, secrets would be lost on container restart
+- For testing only, bypass with: `ACP_ALLOW_EPHEMERAL=I-understand-secrets-will-be-lost`
 
-# Run server
-docker run -d -v acp-data:/data -p 9443:9443 -p 9080:9080 acp-server run --data-dir /data
-```
-
-For production, use infrastructure-level encryption (encrypted EBS, Kubernetes encrypted secrets, etc.).
+**Security notes:**
+- Runs as non-root user `acp` (UID 1000)
+- All files have 0600 permissions
+- Use infrastructure-level encryption in production (encrypted EBS, etc.)
+- Only suitable when agents also run in containers (isolation boundary)
 
 ## Configuration
 
@@ -672,176 +753,287 @@ plugins:
 └── ca.crt                # CA cert (copy for agents to trust)
 
 # Everything else in Keychain (not filesystem):
-# - acp:password-hash
-# - acp:ca-private-key
-# - acp:config
-# - acp:plugin:<name>
-# - acp:credential:<plugin>:<key>
-# - acp:tokens
+# Storage keys use Registry pattern with individual entries:
+# - _registry                      # Central metadata (JSON)
+# - password_hash                  # Argon2(SHA512(password))
+# - ca_private_key                 # CA private key (PEM)
+# - ca_certificate                 # CA public cert (PEM)
+# - plugin:{name}                  # Plugin code (JS)
+# - credential:{plugin}:{field}    # Individual credential fields
+# - token:{id}                     # Agent tokens
 ```
 
-**Linux desktop:**
+**Linux (systemd service):**
 ```
 ~/.config/acp/
 └── ca.crt                # CA cert (copy for agents to trust)
 
-/var/lib/acp/             # Owned by acp:acp, mode 700
-├── password-hash         # Argon2 hash of password
-├── config.yaml           # Server config
-├── ca.key                # CA private key
-├── ca.crt                # CA public cert
-├── secrets.json          # Credentials
-├── tokens.json           # Agent tokens
-└── plugins/
-    └── mikekelly/
-        └── exa-acp.js
+/var/lib/acp/             # Owned by acp:acp, mode 0600 per file
+├── _registry             # Central metadata (JSON)
+├── password_hash         # Argon2 hash
+├── ca_private_key        # CA private key (PEM)
+├── ca_certificate        # CA public cert (PEM)
+├── plugin:{name}         # Individual plugin files
+├── credential:{plugin}:{field}  # Individual credential files
+└── token:{id}            # Individual token files
+
+# Note: Individual files use base64url-encoded filenames
+# File permissions: 0600 (owner read/write only)
 ```
 
-**Container:**
+**Docker:**
 ```
-/data/                    # Mounted volume (--data-dir /data)
-├── password-hash
-├── config.yaml
-├── ca.key
-├── ca.crt
-├── secrets.json
-├── tokens.json
-└── plugins/
+/var/lib/acp/             # Mounted volume (required)
+├── _registry             # Central metadata (JSON)
+├── password_hash
+├── ca_private_key
+├── ca_certificate
+├── plugin:{name}
+├── credential:{plugin}:{field}
+└── token:{id}
+
+# Run as non-root user 'acp' (UID 1000)
+# Files have 0600 permissions
 ```
 
 ## Project Structure
 
 ```
-acp/
-├── Cargo.toml
-├── src/
-│   ├── main.rs                 # CLI entrypoint
-│   ├── bin/
-│   │   └── acp-server.rs       # Server entrypoint
-│   ├── cli/                    # CLI commands
-│   │   ├── mod.rs
-│   │   ├── status.rs
-│   │   ├── plugin.rs
-│   │   ├── service.rs
-│   │   └── token.rs
-│   ├── server/
-│   │   ├── mod.rs
-│   │   ├── proxy.rs            # HTTPS proxy
-│   │   ├── api.rs              # Management API
-│   │   └── tls.rs              # Certificate generation/signing
-│   ├── plugins/
-│   │   ├── mod.rs
-│   │   ├── runtime.rs          # Boa integration
-│   │   └── globals.rs          # ACP.crypto, ACP.util
-│   ├── secrets/
-│   │   ├── mod.rs              # SecretStore trait
-│   │   ├── keychain.rs         # macOS (security-framework)
-│   │   └── file.rs             # Linux (all environments)
-│   └── runtime/
-│       └── globals.js          # Bundled JS for ACP.* globals
-├── plugins/                    # Bundled plugins
-│   ├── exa.js
-│   └── aws-s3.js
-├── scripts/
-│   └── install.sh              # Linux installer
-└── tests/
-    ├── docker-compose.yaml     # Integration tests
-    └── ...
+agent-credential-proxy/
+├── Cargo.toml                  # Workspace manifest
+├── acp-lib/                    # Shared library
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── config.rs
+│   │   ├── error.rs
+│   │   ├── types.rs            # ACPRequest, ACPCredentials, etc.
+│   │   ├── plugin_runtime.rs   # Boa integration
+│   │   ├── secret_store.rs     # SecretStore trait
+│   │   ├── file_store.rs       # File-based storage
+│   │   ├── keychain_store.rs   # macOS Keychain (conditional)
+│   │   ├── token_cache.rs      # Token caching layer
+│   │   ├── registry.rs         # Metadata registry
+│   │   └── certificate_authority.rs  # TLS CA
+│   └── tests/
+│       ├── integration_test.rs
+│       └── e2e_integration_test.rs
+├── acp-server/                 # Server binary
+│   └── src/
+│       ├── main.rs             # Server entrypoint
+│       ├── proxy_server.rs     # MITM proxy
+│       ├── management_api.rs   # REST API
+│       ├── http_utils.rs       # HTTP parsing
+│       ├── plugin_matcher.rs   # Host matching
+│       └── proxy_transforms.rs # Transform pipeline
+├── acp/                        # CLI binary
+│   └── src/
+│       ├── main.rs             # CLI entrypoint
+│       └── commands/           # CLI subcommands
+├── plugins/                    # Example plugins
+│   └── test-api.js
+├── smoke-tests/                # Installation tests
+│   ├── test-install.sh
+│   └── test-docker.sh
+├── Dockerfile
+├── Dockerfile.test-runner
+└── docker-compose.yml
 ```
 
 ## Testing
 
-### Local (macOS)
+### Unit and Integration Tests
+
+```bash
+# Run all tests (workspace-wide)
+cargo test
+
+# Run with ignored tests (requires manual interaction on macOS for Keychain)
+cargo test -- --ignored
+
+# Test specific crate
+cargo test -p acp-lib
+cargo test -p acp-server
+cargo test -p acp
+
+# Run with output
+cargo test -- --nocapture
+```
+
+**Test organization:**
+- Unit tests: Inline with source code (`#[cfg(test)]` modules)
+- Integration tests: `acp-lib/tests/integration_test.rs` (plugin pipeline)
+- E2E tests: `acp-lib/tests/e2e_integration_test.rs` (full server lifecycle)
+- Test plugin: `plugins/test-api.js`
+
+**Test suite status:** 120 tests, 117 passing, 3 ignored on macOS (Keychain prompts)
+
+### Docker Integration Tests
+
+```bash
+# Run full integration test suite with Docker
+docker compose --profile test up --build --abort-on-container-exit
+
+# This runs:
+# 1. acp-server (in container)
+# 2. mock-api (httpbin for testing)
+# 3. test-runner (bash script with API calls)
+```
+
+**Test coverage:**
+- Server initialization
+- Token creation and authentication
+- Plugin installation
+- Credential management
+- Proxy requests with credential injection
+
+### Smoke Tests
+
+```bash
+# Test installation script
+./smoke-tests/test-install.sh
+
+# Test Docker image
+./smoke-tests/test-docker.sh
+```
+
+### Manual Testing
 
 ```bash
 # Build and run server
 cargo build --release
-./target/release/acp-server init
-./target/release/acp-server run
+./target/release/acp-server &
 
-# In another terminal
-./target/release/acp status
-./target/release/acp plugin install example/exa-plugin
-./target/release/acp service configure exa
+# Initialize and configure
+./target/release/acp init
+./target/release/acp install mikekelly/exa-acp
+./target/release/acp set mikekelly/exa-acp:apiKey
 ./target/release/acp token create test-agent
 
 # Test with curl through proxy
-export HTTPS_PROXY=http://127.0.0.1:9443
-export NODE_EXTRA_CA_CERTS=~/.config/acp/ca.crt
-curl -H "Proxy-Authorization: Bearer <agent-token>" https://api.exa.ai/search
+curl -x http://127.0.0.1:9443 \
+     --cacert ~/.config/acp/ca.crt \
+     --proxy-header "Proxy-Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "test", "numResults": 1}' \
+     https://api.exa.ai/search
 ```
 
-### Docker Compose (Integration)
+## Roadmap
 
-```yaml
-# tests/docker-compose.yaml
-services:
-  acp-server:
-    build: ..
-    environment:
-      - ACP_MASTER_KEY=test-key-do-not-use-in-prod
-      - ACP_ADMIN_TOKEN=test-admin-token
-    ports:
-      - "9443:9443"
-      - "9080:9080"
+### Phase 1: Core Platform (Completed)
 
-  test-client:
-    image: alpine:latest
-    depends_on:
-      - acp-server
-    environment:
-      - ACP_SERVER=http://acp-server:9080
-      - ACP_ADMIN_TOKEN=test-admin-token
-      - HTTPS_PROXY=http://acp-server:9443
-    command: |
-      sh -c "
-        apk add --no-cache curl
-        # Test management API
-        acp --server http://acp-server:9080 status
-        # Test proxy (would need real upstream or mock)
-      "
-```
+**Status:** Shipped in v0.1.0
 
-```bash
-# Run integration tests
-cd tests
-docker-compose up --build --abort-on-container-exit
-```
+- MITM HTTPS proxy with TLS interception
+- Boa JavaScript plugin runtime with sandboxing
+- Secure credential storage (macOS Keychain, Linux file-based)
+- Plugin system with host enforcement and credential scoping
+- Management API (HTTP)
+- CLI for all operations
+- Docker support with volume enforcement
+- Installation scripts for macOS and Linux
 
-### Clean Alpine (Installer Test)
+### Phase 2: Enhanced Usability (In Progress)
 
-```bash
-# Test Linux installer in clean environment
-docker run --rm -it -v $(pwd):/src alpine:latest sh -c "
-  apk add --no-cache bash sudo
-  cd /src
-  ./scripts/install.sh
-  acp-server status
-"
-```
+**Goal:** Make ACP easier to use and more discoverable
 
-## v2 Considerations (Future)
+- [ ] **Native GUI applications**
+  - macOS: Swift/SwiftUI menu bar app with Keychain integration
+  - Linux: GTK4 system tray with libsecret
+  - Windows: WinUI 3 with Credential Manager
+- [ ] **Plugin marketplace**
+  - Discover community plugins
+  - Search and browse by API/service
+  - One-click installation
+- [ ] **Improved activity logging**
+  - Real-time streaming (`acp activity --follow`)
+  - Export to JSON/CSV
+  - Filter by time range, agent, or host
+- [ ] **Better documentation**
+  - Video tutorials
+  - Plugin authoring guide
+  - Common integration patterns
 
-- **GUI**: Native menu bar app (Swift on macOS, tray on Windows/Linux)
-- **Windows support**: Credential Manager adapter
-- **OAuth flows**: Browser-based auth for services that require it
-- **Policy engine**: Rate limiting, request filtering, anomaly detection
-- **Audit log export**: SIEM integration for enterprise
-- **Plugin signing**: Optional verification of plugin sources
+### Phase 3: Enterprise Features (Planned)
+
+**Goal:** Production-ready for teams and organizations
+
+- [ ] **Multi-user support**
+  - Per-user credential isolation
+  - Team-shared credentials with RBAC
+  - Audit logging per user
+- [ ] **Policy engine**
+  - Rate limiting (per-token, per-plugin, per-host)
+  - Request filtering (block specific paths, methods)
+  - Anomaly detection (unusual usage patterns)
+  - Cost tracking (API quota management)
+- [ ] **Enhanced security**
+  - Plugin signing and verification
+  - Mandatory 2FA for admin operations
+  - Secret rotation automation
+  - Hardware security module (HSM) integration
+- [ ] **Audit & Compliance**
+  - SIEM integration (Splunk, Datadog, etc.)
+  - Immutable audit logs
+  - Compliance reports (SOC2, GDPR)
+- [ ] **OAuth & SSO flows**
+  - Browser-based OAuth for services requiring it
+  - SAML/OIDC for enterprise identity providers
+  - Refresh token management
+
+### Phase 4: Advanced Capabilities (Future)
+
+**Goal:** Handle complex authentication and scaling
+
+- [ ] **Windows support**
+  - Native Windows Credential Manager storage
+  - Windows installer (MSI)
+  - PowerShell integration
+- [ ] **Advanced authentication schemes**
+  - Mutual TLS (mTLS)
+  - JWT signing with rotation
+  - Custom signature algorithms
+- [ ] **High availability**
+  - Clustered deployment
+  - Credential replication
+  - Load balancing
+- [ ] **Developer experience**
+  - Plugin testing framework
+  - Mock mode for local development
+  - Plugin debugging tools
+  - TypeScript types for plugin development
+- [ ] **Agent framework integrations**
+  - LangChain plugin
+  - AutoGPT integration
+  - Claude Code configuration helper
+  - Cursor integration
 
 ## Summary
 
-v1 provides:
+### Current Status (v0.1.x)
 
-1. **Full isolation** - Everything (plugins, config, credentials) in secure storage, not just secrets
-2. **Password protection** - Shared secret required for all operations except `status`
-3. **Cross-platform** - macOS (Keychain) and Linux (dedicated user or container)
-4. **Simple deployment** - Container: just run with `--data-dir`. Desktop: installer script.
-5. **Simple plugins** - Plain JavaScript with pre-loaded crypto, no build step
-6. **Host enforcement** - Proxy only allows requests to plugin-declared hosts
-7. **Credential scoping** - Plugins only receive credentials namespaced to them
-8. **CLI-first** - Full functionality via command line, GUI deferred to v2
+ACP is production-ready for individual developers and small teams. The core platform is complete:
+
+1. **Full isolation** - Credentials stored in OS-level secure storage (Keychain/files), never exposed to agents
+2. **Password protection** - Interactive password input required for all admin operations
+3. **Cross-platform** - macOS (Keychain), Linux (file-based), Docker (volume-based)
+4. **Simple deployment** - Homebrew on macOS, installer script on Linux, Docker image on Docker Hub
+5. **Simple plugins** - Plain JavaScript with pre-loaded crypto, no build step required
+6. **Host enforcement** - Proxy only forwards to plugin-declared hosts
+7. **Credential scoping** - Plugins only receive their own namespaced credentials
+8. **CLI-first** - Full functionality via command line (GUI in roadmap)
 9. **Remote capable** - Server can run locally or on remote host/container
+10. **GitHub plugin installation** - Install community plugins directly from GitHub repos
+
+### What's Missing
+
+- Native GUI applications (CLI only)
+- Real-time activity streaming (`--follow` flag)
+- Windows support
+- OAuth flows (only static credentials)
+- Multi-user support
+- Rate limiting and policy enforcement
+- Plugin marketplace/discovery
 
 ### Key Decisions
 
