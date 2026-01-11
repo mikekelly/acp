@@ -12,7 +12,7 @@ pub mod api;
 #[cfg(target_os = "macos")]
 pub mod launchd;
 
-use acp_lib::{storage, tls::CertificateAuthority, TokenCache, Registry, Config, ProxyServer};
+use acp_lib::{storage, tls::CertificateAuthority, Registry, Config, ProxyServer};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -117,18 +117,14 @@ async fn main() -> anyhow::Result<()> {
     // Try to create a FileStore for migration if applicable
     run_migration_if_file_store(&registry, &config).await;
 
-    // Create token cache (will load tokens lazily from Registry)
-    let token_cache = Arc::new(TokenCache::new(Arc::clone(&store), Arc::clone(&registry)));
-
-    // Log initial token count
-    let initial_tokens = token_cache.list().await?;
+    // Log initial token count from registry
+    let initial_tokens = registry.list_tokens().await?;
     tracing::info!("Loaded {} agent tokens from storage", initial_tokens.len());
 
-    // Create ProxyServer with token cache, store, and registry
+    // Create ProxyServer with store and registry
     let proxy = ProxyServer::new(
         config.proxy_port,
         ca,
-        Arc::clone(&token_cache),
         Arc::clone(&store),
         Arc::clone(&registry),
     )?;
@@ -142,11 +138,10 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Create API state with token cache, storage backend, and registry
+    // Create API state with storage backend and registry
     let api_state = api::ApiState::new(
         config.proxy_port,
         config.api_port,
-        token_cache,
         Arc::clone(&store),
         registry,
     );

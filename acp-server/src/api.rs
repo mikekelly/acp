@@ -7,7 +7,7 @@
 //! - Token management
 //! - Activity monitoring
 
-use acp_lib::{AgentToken, Registry, TokenCache, storage::SecretStore};
+use acp_lib::{AgentToken, Registry, storage::SecretStore};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     async_trait,
@@ -34,8 +34,6 @@ pub struct ApiState {
     pub api_port: u16,
     /// Password hash (Argon2)
     pub password_hash: Arc<RwLock<Option<String>>>,
-    /// Token cache
-    pub token_cache: Arc<TokenCache>,
     /// Recent activity log
     pub activity: Arc<RwLock<Vec<ActivityEntry>>>,
     /// Shared storage backend
@@ -45,11 +43,10 @@ pub struct ApiState {
 }
 
 impl ApiState {
-    /// Create ApiState with token cache, storage backend, and registry
+    /// Create ApiState with storage backend and registry
     pub fn new(
         proxy_port: u16,
         api_port: u16,
-        token_cache: Arc<TokenCache>,
         store: Arc<dyn SecretStore>,
         registry: Arc<Registry>,
     ) -> Self {
@@ -58,7 +55,6 @@ impl ApiState {
             proxy_port,
             api_port,
             password_hash: Arc::new(RwLock::new(None)),
-            token_cache,
             activity: Arc::new(RwLock::new(Vec::new())),
             store,
             registry,
@@ -580,18 +576,38 @@ async fn create_token(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<TokenResponse>, (StatusCode, String)> {
+    use acp_lib::TokenEntry;
+
     let req: CreateTokenRequest = verify_auth(&state, &body).await?;
 
-    // TokenCache.create() handles both storage and registry updates
-    let token = state.token_cache.create(&req.name)
+    // Create a new AgentToken
+    let token = AgentToken::new(&req.name);
+
+    // Store token in SecretStore with key: token:{token_value}
+    let store_key = format!("token:{}", token.token);
+    let token_json = serde_json::to_vec(&token)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to serialize token: {}", e)))?;
+
+    state.store.set(&store_key, &token_json)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create token: {}", e)))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store token: {}", e)))?;
+
+    // Add token to registry
+    let token_entry = TokenEntry {
+        token_value: token.token.clone(),
+        name: token.name.clone(),
+        created_at: token.created_at,
+    };
+    state.registry.add_token(&token_entry)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add token to registry: {}", e)))?;
 
     let token_value = token.token.clone();
 
     // Return with full token (only time it's revealed)
+    // NOTE: id is the token value (not UUID) to match list_tokens behavior
     Ok(Json(TokenResponse {
-        id: token.id,
+        id: token_value.clone(),
         name: token.name,
         prefix: token.prefix,
         token: Some(token_value),
@@ -607,19 +623,33 @@ async fn delete_token(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     verify_auth::<serde_json::Value>(&state, &body).await?;
 
-    // TokenCache.delete() handles both storage and registry updates
-    let existed = state.token_cache.delete(&id)
+    // The id is the token value (based on test usage)
+    // First, check if token exists in registry
+    let tokens = state.registry.list_tokens()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete token: {}", e)))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to list tokens: {}", e)))?;
 
-    if existed {
-        Ok(Json(serde_json::json!({
-            "id": id,
-            "revoked": true
-        })))
-    } else {
-        Err((StatusCode::NOT_FOUND, format!("Token '{}' not found", id)))
+    let token_exists = tokens.iter().any(|t| t.token_value == id);
+
+    if !token_exists {
+        return Err((StatusCode::NOT_FOUND, format!("Token '{}' not found", id)));
     }
+
+    // Remove from registry
+    state.registry.remove_token(&id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to remove token from registry: {}", e)))?;
+
+    // Delete from storage
+    let store_key = format!("token:{}", id);
+    state.store.delete(&store_key)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete token from storage: {}", e)))?;
+
+    Ok(Json(serde_json::json!({
+        "id": id,
+        "revoked": true
+    })))
 }
 
 /// POST /credentials/:plugin/:key - Set credential (requires auth)
@@ -712,9 +742,9 @@ mod tests {
     use serial_test::serial;
     use tower::ServiceExt; // for `oneshot`
 
-    /// Helper to create a TokenCache, store, and registry for testing
-    /// Returns (TokenCache, Store, Registry, TempDir) - keep the TempDir alive to prevent cleanup
-    async fn create_test_token_cache() -> (Arc<TokenCache>, Arc<dyn SecretStore>, Arc<Registry>, tempfile::TempDir) {
+    /// Helper to create store and registry for testing
+    /// Returns (Store, Registry, TempDir) - keep the TempDir alive to prevent cleanup
+    async fn create_test_storage() -> (Arc<dyn SecretStore>, Arc<Registry>, tempfile::TempDir) {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let store = Arc::new(
             FileStore::new(temp_dir.path().to_path_buf())
@@ -722,14 +752,13 @@ mod tests {
                 .expect("create FileStore"),
         ) as Arc<dyn SecretStore>;
         let registry = Arc::new(Registry::new(Arc::clone(&store)));
-        let cache = Arc::new(TokenCache::new(Arc::clone(&store), Arc::clone(&registry)));
-        (cache, store, registry, temp_dir)
+        (store, registry, temp_dir)
     }
 
     #[tokio::test]
     async fn test_get_status_without_auth() {
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
         let app = create_router(state);
 
         let response = app
@@ -776,8 +805,8 @@ mod tests {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -813,8 +842,8 @@ mod tests {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -857,8 +886,8 @@ mod tests {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -903,8 +932,8 @@ mod tests {
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -944,14 +973,14 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
+        let (store, registry, _temp_dir) = create_test_storage().await;
 
         // Pre-create CA in storage (as server does at startup)
         let ca = CertificateAuthority::generate().expect("generate CA");
         store.set("ca:cert", ca.ca_cert_pem().as_bytes()).await.expect("store CA cert");
         store.set("ca:key", ca.ca_key_pem().as_bytes()).await.expect("store CA key");
 
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let state = ApiState::new(9443, 9080, store, registry);
         let app = create_router(state.clone());
 
         let password = "testpass123";
@@ -998,8 +1027,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -1043,8 +1072,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -1093,8 +1122,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store.clone(), registry.clone());
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store.clone(), registry.clone());
 
         // Set up password hash
         let password = "testpass123";
@@ -1146,8 +1175,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_install_plugin_requires_auth() {
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
         let app = create_router(state);
 
         // Try to install without password
@@ -1180,8 +1209,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -1224,8 +1253,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry);
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -1272,10 +1301,9 @@ mod tests {
                 .expect("create FileStore"),
         ) as Arc<dyn SecretStore>;
 
-        // Create token cache and registry with shared store
+        // Create registry with shared store
         let registry = Arc::new(Registry::new(Arc::clone(&store)));
-        let token_cache = Arc::new(TokenCache::new(Arc::clone(&store), Arc::clone(&registry)));
-        let state = ApiState::new(9443, 9080, token_cache, Arc::clone(&store), registry);
+        let state = ApiState::new(9443, 9080, Arc::clone(&store), registry);
 
         // Set up password hash
         let password = "testpass123";
@@ -1329,8 +1357,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry.clone());
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry.clone());
 
         // Set up password hash
         let password = "testpass123";
@@ -1380,8 +1408,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry.clone());
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry.clone());
 
         // Set up password hash
         let password = "testpass123";
@@ -1433,8 +1461,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, Arc::clone(&registry));
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, Arc::clone(&registry));
 
         // Set up password hash
         let password = "testpass123";
@@ -1504,8 +1532,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry.clone());
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry.clone());
 
         // Set up password hash
         let password = "testpass123";
@@ -1564,8 +1592,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache, store, registry.clone());
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry.clone());
 
         // Set up password hash
         let password = "testpass123";
@@ -1617,8 +1645,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
 
-        let (token_cache, store, registry, _temp_dir) = create_test_token_cache().await;
-        let state = ApiState::new(9443, 9080, token_cache.clone(), store, registry.clone());
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store.clone(), registry.clone());
 
         // Set up password hash
         let password = "testpass123";
@@ -1628,7 +1656,11 @@ mod tests {
         state.set_password_hash(password_hash).await;
 
         // Create a token and add it to both registry and storage
-        let token = token_cache.create("test-token").await.expect("create token");
+        let token = AgentToken::new("test-token");
+        let store_key = format!("token:{}", token.token);
+        let token_json = serde_json::to_vec(&token).expect("serialize token");
+        store.set(&store_key, &token_json).await.expect("store token");
+
         let token_entry = TokenEntry {
             token_value: token.token.clone(),
             name: token.name.clone(),
@@ -1646,7 +1678,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("DELETE")
-                    .uri(&format!("/tokens/{}", token.id))
+                    .uri(&format!("/tokens/{}", token.token))
                     .header("content-type", "application/json")
                     .body(Body::from(serde_json::to_vec(&body).unwrap()))
                     .unwrap(),
