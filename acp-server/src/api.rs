@@ -265,7 +265,7 @@ pub fn create_router(state: ApiState) -> Router {
     Router::new()
         .route("/status", get(get_status))
         .route("/init", post(init))
-        // .route("/plugins", post(post_plugins))  // TODO: Fix handler issue
+        .route("/plugins", post(post_plugins))
         .route("/plugins/install", post(install_plugin))
         .route("/tokens", get(list_tokens).post(post_list_tokens))
         .route("/tokens/create", post(create_token))
@@ -599,7 +599,7 @@ async fn delete_token(
     State(state): State<ApiState>,
     Path(id): Path<String>,
     body: Bytes,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     verify_auth::<serde_json::Value>(&state, &body).await?;
 
     // TokenCache.delete() handles both storage and registry updates
@@ -608,9 +608,12 @@ async fn delete_token(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete token: {}", e)))?;
 
     if existed {
-        Ok(StatusCode::OK)
+        Ok(Json(serde_json::json!({
+            "id": id,
+            "revoked": true
+        })))
     } else {
-        Ok(StatusCode::NOT_FOUND)
+        Err((StatusCode::NOT_FOUND, format!("Token '{}' not found", id)))
     }
 }
 

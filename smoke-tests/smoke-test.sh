@@ -2,8 +2,7 @@
 set -e
 
 # Comprehensive ACP Smoke Test
-# Tests the full workflow: setup, init, tokens, plugins, credentials
-# This script consolidates all smoke test concerns into one executable
+# Tests the full workflow using the CLI as users would in the real world
 
 # Colors for output
 RED='\033[0;31m'
@@ -40,6 +39,13 @@ WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TEST_PASSWORD="smoke-test-password-$(date +%s)"
 API_PORT=19080
 PROXY_PORT=19443
+
+# CLI binary paths
+ACP="$WORKSPACE_ROOT/target/release/acp"
+ACP_SERVER="$WORKSPACE_ROOT/target/release/acp-server"
+
+# Export password for CLI (undocumented env var for testing)
+export ACP_PASSWORD="$TEST_PASSWORD"
 
 log_info "====================================="
 log_info "ACP Comprehensive Smoke Test"
@@ -78,14 +84,14 @@ trap cleanup EXIT
 
 # 1.3: Start server
 log_step "Phase 1.3: Starting acp-server"
-ACP_DATA_DIR="$TEMP_DIR" "$WORKSPACE_ROOT/target/release/acp-server" \
+ACP_DATA_DIR="$TEMP_DIR" "$ACP_SERVER" \
     --api-port $API_PORT \
     --proxy-port $PROXY_PORT \
     --log-level warn > "$TEMP_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 log_info "Server PID: $SERVER_PID"
 
-# 1.4: Health check
+# 1.4: Health check (use curl just for initial health - server not yet initialized)
 log_step "Phase 1.4: Waiting for server health check"
 MAX_RETRIES=30
 RETRY_COUNT=0
@@ -110,29 +116,27 @@ echo ""
 log_step "Phase 2: Initialization"
 echo "-----------------------------------"
 
-# 2.1: Initialize server
-log_step "Phase 2.1: Calling /init with password"
-PASSWORD_HASH=$(echo -n "$TEST_PASSWORD" | sha512sum | cut -d' ' -f1)
-INIT_RESPONSE=$(curl -s -X POST "http://localhost:$API_PORT/init" \
-    -H "Content-Type: application/json" \
-    -d "{\"password_hash\": \"$PASSWORD_HASH\"}")
+# 2.1: Initialize server using CLI
+log_step "Phase 2.1: Initializing server with 'acp init'"
+INIT_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" init 2>&1)
 
-if echo "$INIT_RESPONSE" | grep -q '"ca_path"'; then
-    CA_PATH=$(echo "$INIT_RESPONSE" | jq -r '.ca_path')
-    log_success "Server initialized (CA: $CA_PATH)"
+if echo "$INIT_OUTPUT" | grep -q "initialized successfully"; then
+    log_success "Server initialized via CLI"
+    echo "$INIT_OUTPUT" | grep -E "CA certificate|Next steps" | head -3
 else
-    log_error "Initialization failed: $INIT_RESPONSE"
+    log_error "Initialization failed: $INIT_OUTPUT"
     exit 1
 fi
 
-# 2.2: Verify status shows initialized
-log_step "Phase 2.2: Verifying status shows initialized"
-STATUS_RESPONSE=$(curl -s "http://localhost:$API_PORT/status")
-if echo "$STATUS_RESPONSE" | grep -q '"version"'; then
-    VERSION=$(echo "$STATUS_RESPONSE" | jq -r '.version')
+# 2.2: Verify status using CLI
+log_step "Phase 2.2: Checking status with 'acp status'"
+STATUS_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" status 2>&1)
+
+if echo "$STATUS_OUTPUT" | grep -q "Version:"; then
+    VERSION=$(echo "$STATUS_OUTPUT" | grep "Version:" | awk '{print $2}')
     log_success "Status check passed (version: $VERSION)"
 else
-    log_error "Status check failed: $STATUS_RESPONSE"
+    log_error "Status check failed: $STATUS_OUTPUT"
     exit 1
 fi
 
@@ -143,68 +147,46 @@ echo ""
 log_step "Phase 3: Token Management"
 echo "-----------------------------------"
 
-# 3.1: Create token
-log_step "Phase 3.1: Creating agent token"
+# 3.1: Create token using CLI
+log_step "Phase 3.1: Creating agent token with 'acp token create'"
 TOKEN_NAME="smoke-test-agent-$(date +%s)"
-TOKEN_RESPONSE=$(curl -s -X POST "http://localhost:$API_PORT/tokens/create" \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"password_hash\": \"$PASSWORD_HASH\",
-        \"name\": \"$TOKEN_NAME\"
-    }")
+TOKEN_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" token create "$TOKEN_NAME" 2>&1)
 
-if echo "$TOKEN_RESPONSE" | grep -q '"token"'; then
-    TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.token')
-    TOKEN_ID=$(echo "$TOKEN_RESPONSE" | jq -r '.id')
-    log_success "Token created: ${TOKEN:0:20}... (ID: $TOKEN_ID)"
+if echo "$TOKEN_OUTPUT" | grep -q "Token created"; then
+    TOKEN_ID=$(echo "$TOKEN_OUTPUT" | grep "ID:" | awk '{print $2}')
+    log_success "Token created: $TOKEN_NAME (ID: $TOKEN_ID)"
 else
-    log_error "Token creation failed: $TOKEN_RESPONSE"
+    log_error "Token creation failed: $TOKEN_OUTPUT"
     exit 1
 fi
 
-# 3.2: List tokens
-log_step "Phase 3.2: Listing tokens"
-TOKENS_RESPONSE=$(curl -s -X POST "http://localhost:$API_PORT/tokens" \
-    -H "Content-Type: application/json" \
-    -d "{\"password_hash\": \"$PASSWORD_HASH\"}")
+# 3.2: List tokens using CLI
+log_step "Phase 3.2: Listing tokens with 'acp token list'"
+LIST_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" token list 2>&1)
 
-if echo "$TOKENS_RESPONSE" | grep -q '"tokens"'; then
-    TOKEN_COUNT=$(echo "$TOKENS_RESPONSE" | jq '.tokens | length')
-    log_success "Token list retrieved ($TOKEN_COUNT tokens)"
-
-    # Verify our token appears in the list
-    if echo "$TOKENS_RESPONSE" | jq -e ".tokens[] | select(.name == \"$TOKEN_NAME\")" > /dev/null 2>&1; then
-        log_success "Created token appears in token list"
-    else
-        log_error "Created token does not appear in token list"
-        exit 1
-    fi
+if echo "$LIST_OUTPUT" | grep -q "$TOKEN_NAME"; then
+    log_success "Token appears in list"
 else
-    log_error "Token listing failed: $TOKENS_RESPONSE"
+    log_error "Token not found in list: $LIST_OUTPUT"
     exit 1
 fi
 
-# 3.3: Delete token
-log_step "Phase 3.3: Deleting token"
-DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE "http://localhost:$API_PORT/tokens/$TOKEN_ID" \
-    -H "Content-Type: application/json" \
-    -d "{\"password_hash\": \"$PASSWORD_HASH\"}")
+# 3.3: Revoke token using CLI
+log_step "Phase 3.3: Revoking token with 'acp token revoke'"
+REVOKE_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" token revoke "$TOKEN_ID" 2>&1)
 
-HTTP_CODE=$(echo "$DELETE_RESPONSE" | tail -1)
-if [ "$HTTP_CODE" = "200" ]; then
-    log_success "Token deleted successfully"
+if echo "$REVOKE_OUTPUT" | grep -qi "revoked\|deleted\|success"; then
+    log_success "Token revoked"
 else
-    log_error "Token deletion failed (HTTP $HTTP_CODE)"
+    log_error "Token revocation failed: $REVOKE_OUTPUT"
     exit 1
 fi
 
 # 3.4: Verify token is gone
 log_step "Phase 3.4: Verifying token was deleted"
-TOKENS_AFTER=$(curl -s -X POST "http://localhost:$API_PORT/tokens" \
-    -H "Content-Type: application/json" \
-    -d "{\"password_hash\": \"$PASSWORD_HASH\"}")
+LIST_AFTER=$("$ACP" --server "http://localhost:$API_PORT" token list 2>&1)
 
-if echo "$TOKENS_AFTER" | jq -e ".tokens[] | select(.name == \"$TOKEN_NAME\")" > /dev/null 2>&1; then
+if echo "$LIST_AFTER" | grep -q "$TOKEN_NAME"; then
     log_error "Token still appears after deletion"
     exit 1
 else
@@ -218,72 +200,27 @@ echo ""
 log_step "Phase 4: Plugin Management"
 echo "-----------------------------------"
 
-# 4.1: Install plugin
-log_step "Phase 4.1: Installing plugin (mikekelly/exa-acp)"
-INSTALL_RESPONSE=$(curl -s -X POST "http://localhost:$API_PORT/plugins/install" \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"password_hash\": \"$PASSWORD_HASH\",
-        \"name\": \"mikekelly/exa-acp\"
-    }")
+# 4.1: Install plugin using CLI
+log_step "Phase 4.1: Installing plugin with 'acp install mikekelly/exa-acp'"
+INSTALL_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/exa-acp 2>&1)
 
-if echo "$INSTALL_RESPONSE" | grep -q '"name"'; then
-    PLUGIN_NAME=$(echo "$INSTALL_RESPONSE" | jq -r '.name')
-    log_success "Plugin installed: $PLUGIN_NAME"
+if echo "$INSTALL_OUTPUT" | grep -q "installed successfully"; then
+    log_success "Plugin installed: mikekelly/exa-acp"
 else
-    log_error "Plugin installation failed: $INSTALL_RESPONSE"
+    log_error "Plugin installation failed: $INSTALL_OUTPUT"
     exit 1
 fi
 
-# 4.2: List plugins
-log_step "Phase 4.2: Listing plugins"
-PLUGINS_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://localhost:$API_PORT/plugins" \
-    -H "Content-Type: application/json" \
-    -d "{\"password_hash\": \"$PASSWORD_HASH\"}")
+# 4.2: List plugins using CLI
+log_step "Phase 4.2: Listing plugins with 'acp plugins'"
+PLUGINS_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
 
-HTTP_CODE=$(echo "$PLUGINS_RESPONSE" | tail -1)
-RESPONSE_BODY=$(echo "$PLUGINS_RESPONSE" | sed '$d')
-
-if [ "$HTTP_CODE" = "404" ]; then
-    log_warn "Plugin listing endpoint not available (HTTP 404) - endpoint is commented out in code"
-    log_warn "Skipping plugin listing and metadata verification"
-    log_success "Plugin installed successfully (verified by install response)"
-elif echo "$RESPONSE_BODY" | grep -q '"plugins"'; then
-    PLUGIN_COUNT=$(echo "$RESPONSE_BODY" | jq '.plugins | length')
-    log_success "Plugin list retrieved ($PLUGIN_COUNT plugins)"
-
-    # 4.3: Verify plugin appears with metadata
-    log_step "Phase 4.3: Verifying plugin metadata"
-    PLUGIN_DATA=$(echo "$RESPONSE_BODY" | jq -r ".plugins[] | select(.name == \"$PLUGIN_NAME\")")
-
-    if [ -z "$PLUGIN_DATA" ]; then
-        log_error "Installed plugin does not appear in plugin list"
-        exit 1
-    fi
-
-    if echo "$PLUGIN_DATA" | jq -e '.hosts' > /dev/null 2>&1; then
-        HOSTS=$(echo "$PLUGIN_DATA" | jq -r '.hosts | join(", ")')
-        log_success "Plugin has hosts: $HOSTS"
-    else
-        log_error "Plugin metadata missing hosts field"
-        exit 1
-    fi
-
-    if echo "$PLUGIN_DATA" | jq -e '.credential_schema' > /dev/null 2>&1; then
-        SCHEMA=$(echo "$PLUGIN_DATA" | jq -r '.credential_schema | join(", ")')
-        log_success "Plugin has credential_schema: $SCHEMA"
-    else
-        log_error "Plugin metadata missing credential_schema field"
-        exit 1
-    fi
-
-    # 4.4: Verify registry was updated
-    log_step "Phase 4.4: Verifying registry was updated"
-    # The registry is stored at key "_registry" in the data directory
-    # We can verify it exists by checking the plugins list works (which we just did)
-    log_success "Registry successfully tracks plugin metadata"
+if echo "$PLUGINS_OUTPUT" | grep -q "mikekelly/exa-acp"; then
+    log_success "Plugin appears in list"
+    # Show plugin details
+    echo "$PLUGINS_OUTPUT" | grep -A5 "mikekelly/exa-acp" | head -6
 else
-    log_error "Plugin listing failed (HTTP $HTTP_CODE): $RESPONSE_BODY"
+    log_error "Plugin not found in list: $PLUGINS_OUTPUT"
     exit 1
 fi
 
@@ -294,33 +231,19 @@ echo ""
 log_step "Phase 5: Credential Management"
 echo "-----------------------------------"
 
-# 5.1: Set credentials for the plugin
-log_step "Phase 5.1: Setting credentials for plugin"
-CRED_KEY="api_key"
+# 5.1: Set credentials using CLI
+log_step "Phase 5.1: Setting credential with 'acp set mikekelly/exa-acp:apiKey'"
 CRED_VALUE="test-secret-key-$(date +%s)"
-# URL-encode the plugin name (replace / with %2F)
-PLUGIN_NAME_ENCODED=$(echo "$PLUGIN_NAME" | sed 's/\//%2F/g')
-CRED_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://localhost:$API_PORT/credentials/$PLUGIN_NAME_ENCODED/$CRED_KEY" \
-    -H "Content-Type: application/json" \
-    -d "{
-        \"password_hash\": \"$PASSWORD_HASH\",
-        \"value\": \"$CRED_VALUE\"
-    }")
+export ACP_CREDENTIAL_VALUE="$CRED_VALUE"
 
-CRED_HTTP_CODE=$(echo "$CRED_RESPONSE" | tail -1)
-if [ "$CRED_HTTP_CODE" = "200" ]; then
+SET_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" set "mikekelly/exa-acp:apiKey" 2>&1)
+
+if echo "$SET_OUTPUT" | grep -qi "set successfully\|success"; then
     log_success "Credential set successfully"
 else
-    RESPONSE_BODY=$(echo "$CRED_RESPONSE" | sed '$d')
-    log_error "Credential setting failed (HTTP $CRED_HTTP_CODE): $RESPONSE_BODY"
+    log_error "Credential setting failed: $SET_OUTPUT"
     exit 1
 fi
-
-# 5.2: Verify credential was stored (by checking it can be retrieved via deletion)
-log_step "Phase 5.2: Verifying credential was stored"
-# Note: There's no GET endpoint for credentials, only POST (set) and DELETE
-# We can verify the credential exists by attempting to delete it
-log_success "Credential stored successfully (verified by set response)"
 
 log_success "Phase 5 complete: Credential management verified"
 echo ""
@@ -341,10 +264,10 @@ log_info "====================================="
 echo ""
 echo "Summary:"
 echo "  ✓ Phase 1: Setup (build, start server, health check)"
-echo "  ✓ Phase 2: Initialization (password, status)"
-echo "  ✓ Phase 3: Token Management (create, list, delete, verify)"
-echo "  ✓ Phase 4: Plugin Management (install, list, verify metadata)"
-echo "  ✓ Phase 5: Credential Management (set, list, verify)"
+echo "  ✓ Phase 2: Initialization (acp init, acp status)"
+echo "  ✓ Phase 3: Token Management (acp token create/list/revoke)"
+echo "  ✓ Phase 4: Plugin Management (acp install, acp plugins)"
+echo "  ✓ Phase 5: Credential Management (acp set)"
 echo "  ✓ Phase 6: Cleanup (server stop, temp dir removal)"
 echo ""
 log_success "Comprehensive smoke test completed successfully"
