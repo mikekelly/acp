@@ -38,6 +38,11 @@ pub trait SecretStore: Send + Sync {
     ///
     /// Returns Ok(()) even if the key doesn't exist (idempotent).
     async fn delete(&self, key: &str) -> Result<()>;
+
+    /// Downcast to concrete type
+    ///
+    /// Enables type-specific operations like listing keys on FileStore.
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// File-based secret storage implementation
@@ -127,6 +132,10 @@ impl SecretStore for FileStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(e.into()),
         }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -220,6 +229,10 @@ impl SecretStore for KeychainStore {
             key,
             self.access_group.as_deref(),
         )
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

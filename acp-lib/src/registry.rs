@@ -14,6 +14,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Token metadata entry in the registry
@@ -190,6 +191,77 @@ impl Registry {
     }
 
     // Migration support
+
+    /// Migrate tokens from old format (token:{id}) to new format (token:{value})
+    ///
+    /// This method scans for tokens stored with old UUID-based keys and migrates them
+    /// to the new token-value-based keys. It also updates the registry.
+    ///
+    /// Old format: `token:{uuid}` where uuid is the token.id field
+    /// New format: `token:{token_value}` where token_value is the actual token string (acp_...)
+    ///
+    /// Migration process:
+    /// 1. List all keys with prefix "token:"
+    /// 2. For each key, load the token and check format
+    /// 3. If old format (key != "token:{token.token}"), migrate:
+    ///    - Store at new key "token:{token.token}"
+    ///    - Add to registry if not already present
+    ///    - Delete old key
+    ///
+    /// # Returns
+    /// * Ok(()) if migration succeeded
+    /// * Err if migration failed
+    pub async fn migrate_old_token_format(&self) -> Result<()> {
+        // We need FileStore to list keys
+        // If store is not FileStore, we can't migrate (return Ok to skip)
+        let file_store = match self.store.as_any().downcast_ref::<FileStore>() {
+            Some(fs) => fs,
+            None => return Ok(()), // Not a FileStore, skip migration
+        };
+
+        // Get all token keys
+        let token_keys = file_store.list_internal("token:").await?;
+
+        // Load existing registry to check for duplicates
+        let mut registry_data = self.load().await?;
+        let existing_token_values: HashSet<String> =
+            registry_data.tokens.iter().map(|t| t.token_value.clone()).collect();
+
+        for key in token_keys {
+            // Load the token
+            if let Some(token_bytes) = self.store.get(&key).await? {
+                if let Ok(token) = serde_json::from_slice::<AgentToken>(&token_bytes) {
+                    let new_key = format!("token:{}", token.token);
+
+                    // Check if this is an old-format key
+                    if key != new_key {
+                        // This is old format - migrate it
+
+                        // Store at new key
+                        self.store.set(&new_key, &token_bytes).await?;
+
+                        // Add to registry if not already present
+                        if !existing_token_values.contains(&token.token) {
+                            let entry = TokenEntry {
+                                token_value: token.token.clone(),
+                                name: token.name.clone(),
+                                created_at: token.created_at,
+                            };
+                            registry_data.tokens.push(entry);
+                        }
+
+                        // Delete old key
+                        self.store.delete(&key).await?;
+                    }
+                }
+            }
+        }
+
+        // Save updated registry
+        self.save(&registry_data).await?;
+
+        Ok(())
+    }
 
     /// Migrate existing FileStore data to registry
     ///
@@ -926,5 +998,98 @@ mod tests {
         // Verify token is gone
         let tokens = registry.list_tokens().await.expect("list should succeed");
         assert_eq!(tokens.len(), 0);
+    }
+
+    // RED: Test migration from old token format (token:{id}) to new format (token:{value})
+    #[tokio::test]
+    async fn test_migrate_old_token_format() {
+        use crate::storage::{FileStore, SecretStore};
+        use std::sync::Arc;
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(
+            FileStore::new(temp_dir.path().to_path_buf())
+                .await
+                .expect("create FileStore"),
+        );
+        let registry = Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>);
+
+        // Create a token using OLD format: token:{id}
+        let old_token = AgentToken::new("old-token");
+        let old_token_json = serde_json::to_vec(&old_token).expect("serialize token");
+        let old_key = format!("token:{}", old_token.id); // OLD FORMAT
+        store.set(&old_key, &old_token_json).await.expect("store old token");
+
+        // Run migration
+        registry.migrate_old_token_format().await.expect("migration should succeed");
+
+        // Verify token is now in registry with new format
+        let tokens = registry.list_tokens().await.expect("list should succeed");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token_value, old_token.token);
+        assert_eq!(tokens[0].name, "old-token");
+
+        // Verify token is accessible via new format key
+        let new_key = format!("token:{}", old_token.token);
+        let token_json = store.get(&new_key).await.expect("get should succeed").expect("token should exist");
+        let migrated_token: AgentToken = serde_json::from_slice(&token_json).expect("deserialize should succeed");
+        assert_eq!(migrated_token.token, old_token.token);
+        assert_eq!(migrated_token.name, "old-token");
+
+        // Verify old key is deleted
+        let old_value = store.get(&old_key).await.expect("get should succeed");
+        assert!(old_value.is_none(), "old format key should be deleted");
+    }
+
+    // RED: Test that migration handles mixed old and new formats
+    #[tokio::test]
+    async fn test_migrate_mixed_token_formats() {
+        use crate::storage::{FileStore, SecretStore};
+        use std::sync::Arc;
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = Arc::new(
+            FileStore::new(temp_dir.path().to_path_buf())
+                .await
+                .expect("create FileStore"),
+        );
+        let registry = Registry::new(Arc::clone(&store) as Arc<dyn SecretStore>);
+
+        // Create one token in OLD format
+        let old_token = AgentToken::new("old-token");
+        let old_token_json = serde_json::to_vec(&old_token).expect("serialize token");
+        let old_key = format!("token:{}", old_token.id);
+        store.set(&old_key, &old_token_json).await.expect("store old token");
+
+        // Create one token in NEW format with registry entry
+        let new_token = AgentToken::new("new-token");
+        let new_token_json = serde_json::to_vec(&new_token).expect("serialize token");
+        let new_key = format!("token:{}", new_token.token);
+        store.set(&new_key, &new_token_json).await.expect("store new token");
+
+        let new_entry = TokenEntry {
+            token_value: new_token.token.clone(),
+            name: new_token.name.clone(),
+            created_at: new_token.created_at,
+        };
+        registry.add_token(&new_entry).await.expect("add new token to registry");
+
+        // Run migration
+        registry.migrate_old_token_format().await.expect("migration should succeed");
+
+        // Verify both tokens are in registry
+        let tokens = registry.list_tokens().await.expect("list should succeed");
+        assert_eq!(tokens.len(), 2);
+
+        let token_values: Vec<String> = tokens.iter().map(|t| t.token_value.clone()).collect();
+        assert!(token_values.contains(&old_token.token));
+        assert!(token_values.contains(&new_token.token));
+
+        // Verify old key is deleted, new key still exists
+        let old_value = store.get(&old_key).await.expect("get should succeed");
+        assert!(old_value.is_none(), "old format key should be deleted");
+
+        let new_value = store.get(&new_key).await.expect("get should succeed");
+        assert!(new_value.is_some(), "new format key should still exist");
     }
 }
