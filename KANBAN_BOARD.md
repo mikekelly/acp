@@ -3,6 +3,9 @@
 ## Ideas
 <!-- Raw thoughts, not yet evaluated -->
 
+- A fork of exa-mcp-server that relies on ACP proxy instead of env vars
+- Drop-in wrappers for common http libraries that handle ACP proxying transparently (exa-mcp-server fork would be a good test candidate)
+- Plugins that can initiate and handle OAuth dance when installed
 - Plugin authoring guide documentation
 
 ## Designed
@@ -13,8 +16,8 @@
 ## Ready
 <!-- Designed + planned, can be picked up -->
 
-- Token/Plugin Simplification: Remove TokenCache, store tokens by value, fix plugin matching (see docs/macos-improvements/plan.md Phase 1)
-- macOS Native GUI: Menu bar app using existing management API (see docs/macos-improvements/plan.md Phase 2)
+- Token/Plugin Simplification: Remove TokenCache, store tokens by value, fix plugin matching (see docs/token-plugin-simplification/plan.md)
+- macOS Native GUI: Menu bar app using existing management API (see docs/macos-improvements/macos-gui-plan.md)
 
 ## In Progress
 <!-- Currently being worked on -->
