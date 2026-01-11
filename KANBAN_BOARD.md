@@ -8,10 +8,12 @@
 ## Designed
 <!-- Has clear outcomes/spec -->
 
+- HTTPS for CLI → proxy communication (defense in depth using existing ca.crt)
+
 ## Ready
 <!-- Designed + planned, can be picked up -->
 
-- HTTPS for CLI → proxy communication (defense in depth using existing ca.crt)
+- macOS Direct Keychain Auth (see docs/macos-keychain-auth/plan.md)
 
 ## In Progress
 <!-- Currently being worked on -->
