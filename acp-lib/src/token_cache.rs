@@ -89,20 +89,19 @@ impl TokenCache {
     pub async fn create(&self, name: &str) -> Result<AgentToken> {
         let token = AgentToken::new(name);
 
-        // Persist to storage
+        // Persist to storage - use token value as key
         let token_json = serde_json::to_vec(&token)
             .map_err(|e| AcpError::storage(format!("Failed to serialize token: {}", e)))?;
 
-        let store_key = format!("token:{}", token.id);
+        let store_key = format!("token:{}", token.token);
         self.store.set(&store_key, &token_json).await?;
 
         // Add to registry
         use crate::registry::TokenEntry;
         let token_entry = TokenEntry {
-            id: token.id.clone(),
+            token_value: token.token.clone(),
             name: token.name.clone(),
             created_at: token.created_at,
-            prefix: token.prefix.clone(),
         };
         self.registry.add_token(&token_entry).await?;
 
@@ -112,25 +111,25 @@ impl TokenCache {
         Ok(token)
     }
 
-    /// Delete token by ID
+    /// Delete token by token value
     ///
     /// Writes to disk, updates Registry, and invalidates cache. Returns true if token existed, false otherwise.
-    pub async fn delete(&self, id: &str) -> Result<bool> {
-        // Delete from storage
-        let store_key = format!("token:{}", id);
+    pub async fn delete(&self, token_value: &str) -> Result<bool> {
+        // Delete from storage - use token value as key
+        let store_key = format!("token:{}", token_value);
 
         // Check if it exists first by loading cache
         let existed = {
             let cache_guard = self.cache.read().await;
             if let Some(ref token_map) = *cache_guard {
-                token_map.values().any(|t| t.id == id)
+                token_map.contains_key(token_value)
             } else {
                 // Cache miss - need to load to know if it exists
                 drop(cache_guard);
                 self.load_cache().await?;
                 let cache_guard = self.cache.read().await;
                 if let Some(ref token_map) = *cache_guard {
-                    token_map.values().any(|t| t.id == id)
+                    token_map.contains_key(token_value)
                 } else {
                     false
                 }
@@ -139,8 +138,8 @@ impl TokenCache {
 
         self.store.delete(&store_key).await?;
 
-        // Remove from registry
-        self.registry.remove_token(id).await?;
+        // Remove from registry (uses token_value as key)
+        self.registry.remove_token(token_value).await?;
 
         // Invalidate cache
         self.invalidate().await;
@@ -166,7 +165,7 @@ impl TokenCache {
 
         // Load each token value from storage
         for entry in token_entries {
-            let key = format!("token:{}", entry.id);
+            let key = format!("token:{}", entry.token_value);
             if let Some(token_json) = self.store.get(&key).await? {
                 match serde_json::from_slice::<AgentToken>(&token_json) {
                     Ok(token) => {
@@ -263,8 +262,8 @@ mod tests {
         // Create a token
         let token = cache.create("test-agent").await.expect("create token");
 
-        // Delete it
-        let existed = cache.delete(&token.id).await.expect("delete token");
+        // Delete it using token value
+        let existed = cache.delete(&token.token).await.expect("delete token");
         assert!(existed);
 
         // Should not be found
@@ -369,16 +368,15 @@ mod tests {
         // Manually add a token to storage AND registry (bypassing cache)
         let token2 = AgentToken::new("agent-2");
         let token_json = serde_json::to_vec(&token2).expect("serialize token");
-        let store_key = format!("token:{}", token2.id);
+        let store_key = format!("token:{}", token2.token);
         store.set(&store_key, &token_json).await.expect("store token");
 
         // Also add to registry
         use crate::registry::TokenEntry;
         let token_entry = TokenEntry {
-            id: token2.id.clone(),
+            token_value: token2.token.clone(),
             name: token2.name.clone(),
             created_at: token2.created_at,
-            prefix: token2.prefix.clone(),
         };
         registry.add_token(&token_entry).await.expect("add to registry");
 

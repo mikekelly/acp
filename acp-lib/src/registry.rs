@@ -19,10 +19,9 @@ use std::sync::Arc;
 /// Token metadata entry in the registry
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TokenEntry {
-    pub id: String,
+    pub token_value: String,
     pub name: String,
     pub created_at: DateTime<Utc>,
-    pub prefix: String,
 }
 
 /// Plugin metadata entry in the registry
@@ -116,12 +115,12 @@ impl Registry {
         self.save(&data).await
     }
 
-    /// Remove a token from the registry by id
+    /// Remove a token from the registry by token value
     ///
-    /// Loads the registry, removes the token with matching id, and saves.
-    pub async fn remove_token(&self, id: &str) -> Result<()> {
+    /// Loads the registry, removes the token with matching token_value, and saves.
+    pub async fn remove_token(&self, token_value: &str) -> Result<()> {
         let mut data = self.load().await?;
-        data.tokens.retain(|t| t.id != id);
+        data.tokens.retain(|t| t.token_value != token_value);
         self.save(&data).await
     }
 
@@ -223,10 +222,9 @@ impl Registry {
             if let Some(token_bytes) = self.store.get(&key).await? {
                 if let Ok(token) = serde_json::from_slice::<AgentToken>(&token_bytes) {
                     let entry = TokenEntry {
-                        id: token.id.clone(),
+                        token_value: token.token.clone(),
                         name: token.name.clone(),
                         created_at: token.created_at,
-                        prefix: format!("acp_{}", &token.id[..6.min(token.id.len())]),
                     };
                     data.tokens.push(entry);
                 }
@@ -292,12 +290,11 @@ mod tests {
         let data = RegistryData {
             version: 1,
             tokens: vec![TokenEntry {
-                id: "abc123".to_string(),
+                token_value: "acp_abc123".to_string(),
                 name: "test-token".to_string(),
                 created_at: DateTime::parse_from_rfc3339("2024-01-15T10:30:00Z")
                     .unwrap()
                     .with_timezone(&Utc),
-                prefix: "acp_abc123".to_string(),
             }],
             plugins: vec![PluginEntry {
                 name: "exa".to_string(),
@@ -313,7 +310,7 @@ mod tests {
         // Serialize to JSON
         let json = serde_json::to_string(&data).expect("serialization should succeed");
         assert!(json.contains("\"version\":1"));
-        assert!(json.contains("\"id\":\"abc123\""));
+        assert!(json.contains("\"token_value\":\"acp_abc123\""));
         assert!(json.contains("\"name\":\"exa\""));
 
         // Deserialize back
@@ -321,7 +318,7 @@ mod tests {
             serde_json::from_str(&json).expect("deserialization should succeed");
         assert_eq!(parsed.version, 1);
         assert_eq!(parsed.tokens.len(), 1);
-        assert_eq!(parsed.tokens[0].id, "abc123");
+        assert_eq!(parsed.tokens[0].token_value, "acp_abc123");
         assert_eq!(parsed.plugins.len(), 1);
         assert_eq!(parsed.plugins[0].name, "exa");
         assert_eq!(parsed.credentials.len(), 1);
@@ -347,15 +344,13 @@ mod tests {
     #[test]
     fn test_token_entry_fields() {
         let token = TokenEntry {
-            id: "test123".to_string(),
+            token_value: "acp_test123".to_string(),
             name: "my-agent".to_string(),
             created_at: Utc::now(),
-            prefix: "acp_test123".to_string(),
         };
 
-        assert_eq!(token.id, "test123");
+        assert_eq!(token.token_value, "acp_test123");
         assert_eq!(token.name, "my-agent");
-        assert_eq!(token.prefix, "acp_test123");
     }
 
     #[test]
@@ -416,10 +411,9 @@ mod tests {
         let data = RegistryData {
             version: 1,
             tokens: vec![TokenEntry {
-                id: "test123".to_string(),
+                token_value: "acp_test123".to_string(),
                 name: "test-token".to_string(),
                 created_at: Utc::now(),
-                prefix: "acp_test123".to_string(),
             }],
             plugins: vec![PluginEntry {
                 name: "exa".to_string(),
@@ -442,7 +436,7 @@ mod tests {
         let loaded = registry.load().await.expect("load should succeed");
         assert_eq!(loaded.version, data.version);
         assert_eq!(loaded.tokens.len(), 1);
-        assert_eq!(loaded.tokens[0].id, "test123");
+        assert_eq!(loaded.tokens[0].token_value, "acp_test123");
         assert_eq!(loaded.plugins.len(), 1);
         assert_eq!(loaded.plugins[0].name, "exa");
         assert_eq!(loaded.credentials.len(), 1);
@@ -464,10 +458,9 @@ mod tests {
         let data1 = RegistryData {
             version: 1,
             tokens: vec![TokenEntry {
-                id: "token1".to_string(),
+                token_value: "acp_token1".to_string(),
                 name: "first".to_string(),
                 created_at: Utc::now(),
-                prefix: "acp_token1".to_string(),
             }],
             plugins: vec![],
             credentials: vec![],
@@ -479,16 +472,14 @@ mod tests {
             version: 1,
             tokens: vec![
                 TokenEntry {
-                    id: "token1".to_string(),
+                    token_value: "acp_token1".to_string(),
                     name: "first".to_string(),
                     created_at: Utc::now(),
-                    prefix: "acp_token1".to_string(),
                 },
                 TokenEntry {
-                    id: "token2".to_string(),
+                    token_value: "acp_token2".to_string(),
                     name: "second".to_string(),
                     created_at: Utc::now(),
-                    prefix: "acp_token2".to_string(),
                 },
             ],
             plugins: vec![],
@@ -499,7 +490,7 @@ mod tests {
         // Load and verify it was overwritten
         let loaded = registry.load().await.expect("load should succeed");
         assert_eq!(loaded.tokens.len(), 2);
-        assert_eq!(loaded.tokens[1].id, "token2");
+        assert_eq!(loaded.tokens[1].token_value, "acp_token2");
     }
 
     #[tokio::test]
@@ -545,10 +536,9 @@ mod tests {
         let registry = Registry::new(Arc::new(store));
 
         let token = TokenEntry {
-            id: "abc123".to_string(),
+            token_value: "acp_abc123".to_string(),
             name: "test-token".to_string(),
             created_at: Utc::now(),
-            prefix: "acp_abc123".to_string(),
         };
 
         // Add token should succeed
@@ -557,7 +547,7 @@ mod tests {
         // Verify token is in registry
         let tokens = registry.list_tokens().await.expect("list should succeed");
         assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].id, "abc123");
+        assert_eq!(tokens[0].token_value, "acp_abc123");
         assert_eq!(tokens[0].name, "test-token");
     }
 
@@ -574,30 +564,28 @@ mod tests {
 
         // Add two tokens
         let token1 = TokenEntry {
-            id: "abc123".to_string(),
+            token_value: "acp_abc123".to_string(),
             name: "token1".to_string(),
             created_at: Utc::now(),
-            prefix: "acp_abc123".to_string(),
         };
         let token2 = TokenEntry {
-            id: "def456".to_string(),
+            token_value: "acp_def456".to_string(),
             name: "token2".to_string(),
             created_at: Utc::now(),
-            prefix: "acp_def456".to_string(),
         };
         registry.add_token(&token1).await.expect("add should succeed");
         registry.add_token(&token2).await.expect("add should succeed");
 
-        // Remove first token
+        // Remove first token by value
         registry
-            .remove_token("abc123")
+            .remove_token("acp_abc123")
             .await
             .expect("remove should succeed");
 
         // Verify only second token remains
         let tokens = registry.list_tokens().await.expect("list should succeed");
         assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].id, "def456");
+        assert_eq!(tokens[0].token_value, "acp_def456");
     }
 
     #[tokio::test]
@@ -617,16 +605,14 @@ mod tests {
 
         // Add tokens
         let token1 = TokenEntry {
-            id: "abc123".to_string(),
+            token_value: "acp_abc123".to_string(),
             name: "token1".to_string(),
             created_at: Utc::now(),
-            prefix: "acp_abc123".to_string(),
         };
         let token2 = TokenEntry {
-            id: "def456".to_string(),
+            token_value: "acp_def456".to_string(),
             name: "token2".to_string(),
             created_at: Utc::now(),
-            prefix: "acp_def456".to_string(),
         };
         registry.add_token(&token1).await.expect("add should succeed");
         registry.add_token(&token2).await.expect("add should succeed");
@@ -881,5 +867,64 @@ mod tests {
             .await
             .expect("list should succeed");
         assert_eq!(creds.len(), 2);
+    }
+
+    // RED: Test that token value IS the ID (no separate id field)
+    #[tokio::test]
+    async fn test_token_entry_uses_value_as_key() {
+        use crate::storage::FileStore;
+        use std::sync::Arc;
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = FileStore::new(temp_dir.path().to_path_buf())
+            .await
+            .expect("create FileStore");
+        let registry = Registry::new(Arc::new(store));
+
+        let token = TokenEntry {
+            token_value: "acp_test123".to_string(),
+            name: "test-token".to_string(),
+            created_at: Utc::now(),
+        };
+
+        // Add token
+        registry.add_token(&token).await.expect("add should succeed");
+
+        // Verify token is in registry
+        let tokens = registry.list_tokens().await.expect("list should succeed");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].token_value, "acp_test123");
+        assert_eq!(tokens[0].name, "test-token");
+    }
+
+    // RED: Test that remove_token works with value as key
+    #[tokio::test]
+    async fn test_remove_token_by_value() {
+        use crate::storage::FileStore;
+        use std::sync::Arc;
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let store = FileStore::new(temp_dir.path().to_path_buf())
+            .await
+            .expect("create FileStore");
+        let registry = Registry::new(Arc::new(store));
+
+        // Add token
+        let token = TokenEntry {
+            token_value: "acp_test123".to_string(),
+            name: "test-token".to_string(),
+            created_at: Utc::now(),
+        };
+        registry.add_token(&token).await.expect("add should succeed");
+
+        // Remove by value
+        registry
+            .remove_token("acp_test123")
+            .await
+            .expect("remove should succeed");
+
+        // Verify token is gone
+        let tokens = registry.list_tokens().await.expect("list should succeed");
+        assert_eq!(tokens.len(), 0);
     }
 }

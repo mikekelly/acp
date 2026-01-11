@@ -62,7 +62,7 @@ async fn test_migrate_from_file_store() {
     // Verify registry was created and contains the migrated data
     let tokens = registry.list_tokens().await.expect("list tokens");
     assert_eq!(tokens.len(), 1, "should have migrated 1 token");
-    assert_eq!(tokens[0].id, token.id);
+    assert_eq!(tokens[0].token_value, token.token);
     assert_eq!(tokens[0].name, "test-token");
 
     let plugins = registry.list_plugins().await.expect("list plugins");
@@ -90,10 +90,9 @@ async fn test_migrate_skips_when_registry_exists() {
     // Create registry with existing data
     let registry = Registry::new(store.clone() as Arc<dyn acp_lib::storage::SecretStore>);
     let existing_token = TokenEntry {
-        id: "existing123".to_string(),
+        token_value: "acp_existing123".to_string(),
         name: "existing-token".to_string(),
         created_at: Utc::now(),
-        prefix: "acp_existing123".to_string(),
     };
     registry
         .add_token(&existing_token)
@@ -118,7 +117,7 @@ async fn test_migrate_skips_when_registry_exists() {
     // Verify only the original token exists in registry
     let tokens = registry.list_tokens().await.expect("list tokens");
     assert_eq!(tokens.len(), 1, "should still have only 1 token");
-    assert_eq!(tokens[0].id, "existing123", "should be the original token");
+    assert_eq!(tokens[0].token_value, "acp_existing123", "should be the original token");
 }
 
 /// Test that migration handles empty FileStore gracefully

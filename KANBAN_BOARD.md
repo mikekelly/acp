@@ -16,11 +16,12 @@
 ## Ready
 <!-- Designed + planned, can be picked up -->
 
-- Token/Plugin Simplification: Remove TokenCache, store tokens by value, fix plugin matching (see docs/token-plugin-simplification/plan.md)
 - macOS Native GUI: Menu bar app using existing management API (see docs/macos-improvements/macos-gui-plan.md)
 
 ## In Progress
 <!-- Currently being worked on -->
+
+- Token/Plugin Simplification: Remove TokenCache, store tokens by value, fix plugin matching (see docs/token-plugin-simplification/plan.md)
 
 ## Done
 <!-- Shipped — archive periodically -->
