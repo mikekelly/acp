@@ -1,7 +1,13 @@
 # Agent Orientation
 
-## Purpose
-Agent credential proxy — manages credential access for AI agents.
+## What This Is
+ACP (Agent Credential Proxy) lets AI agents access APIs without seeing your credentials. Agents route requests through the proxy with a token; ACP injects stored credentials and forwards to the API. The agent never sees the actual API keys.
+
+**Security model:**
+- Credentials stored in OS keychain (macOS) or under dedicated service user (Linux)
+- No API to retrieve credentials - write-only storage
+- Agent tokens are for audit/tracking only, not authentication
+- Proxy listens on localhost - stolen tokens useless off-machine
 
 ## Structure
 - **Cargo workspace** with 3 crates:
@@ -29,7 +35,7 @@ cargo run --bin acp-server  # Run server
 - `AcpError` - Unified error type with context helpers (includes Network and Protocol variants)
 - `PluginRuntime` - Sandboxed Boa JS runtime with ACP.crypto, ACP.util, ACP.log, TextEncoder/TextDecoder, URL/URLSearchParams
 - `SecretStore` - Async trait for secure storage (FileStore, KeychainStore implementations)
-- `FileStore` - File-based storage with 0600 permissions, base64url-encoded filenames
+- `FileStore` - File-based storage with 0600 permissions (Linux: runs under dedicated service user for isolation)
 - `KeychainStore` - macOS Keychain integration (conditional compilation)
 - `create_store()` - Factory for platform-appropriate storage
 - `TokenCache` - Invalidate-on-write cache over SecretStore for agent tokens (read from cache/disk, write to disk + invalidate)

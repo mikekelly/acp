@@ -25,10 +25,12 @@ Agents **opt in** by routing requests through the proxy. You give them a proxy t
 
 **Why this matters:**
 - **Prompt injection can't leak credentials** - The agent doesn't have them. A malicious prompt can't trick the agent into revealing what it doesn't possess.
-- **Credentials never leave your machine** - Stored in your OS keychain (macOS) or encrypted files, injected at the network layer. The proxy only listens on localhost by default.
+- **Credentials never leave your machine** - Stored in your OS keychain (macOS) or under a dedicated service user (Linux). The proxy injects them into requests on your behalf.
+- **Stolen tokens are useless off-machine** - Prompt injection could exfiltrate an ACP token, but the proxy only listens on localhost. The token only works on your machine.
 - **One-way credential flow** - Credentials go into ACP and never come back out. There's no API to retrieve them, no export function. The only path out is privilege escalation on your machine.
 - **Scoped access** - Agents only get access to APIs you explicitly authorize via plugins
-- **Works with any agent** - If it can use an HTTP proxy, it works with ACP
+- **Works with any agent or software stack** - If it can use an HTTP proxy, it works with ACP
+- **CLI protects secrets from shell history** - Credentials are entered via secure prompts, never as command arguments that could end up in shell logs (accessible to agents)
 
 ## Get Started
 
@@ -284,7 +286,7 @@ The agent sends the request without any API key - ACP injects it automatically.
 1. **Agent makes request** through the proxy with its bearer token
 2. **ACP authenticates** the agent and checks which plugins it can use
 3. **Plugin matches** the target hostname (e.g., `api.exa.ai`)
-4. **Credentials loaded** from secure storage (Keychain on macOS, encrypted file on Linux)
+4. **Credentials loaded** from secure storage (Keychain on macOS, service user on Linux)
 5. **JavaScript transform** injects credentials into the request
 6. **Request forwarded** to the actual API
 
@@ -349,7 +351,7 @@ You need to trust it not to exfiltrate data it receives from APIs (like search r
 **Core functionality complete:**
 - MITM proxy with TLS interception
 - JavaScript plugin system with credential injection
-- Secure credential storage (macOS Keychain, encrypted files)
+- Secure credential storage (macOS Keychain, Linux service user isolation)
 - CLI for management
 - Management API for programmatic control
 
