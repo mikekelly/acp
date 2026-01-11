@@ -370,6 +370,7 @@ The CLI works, but managing credentials should be as easy as a password manager.
 
 ### Coming Soon
 
+- **HTTPS for CLI → proxy communication** - defense in depth using existing ca.crt to prevent network observers from seeing even hashed shared secrets
 - **Linux distro packages** - .deb, .rpm, and other native packages for easier installation
 - **Audit logging** - full trail of what credentials were used when
 - **Policy plugins** - custom policies that can assess and block requests

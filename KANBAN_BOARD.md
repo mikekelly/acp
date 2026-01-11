@@ -11,6 +11,8 @@
 ## Ready
 <!-- Designed + planned, can be picked up -->
 
+- HTTPS for CLI → proxy communication (defense in depth using existing ca.crt)
+
 ## In Progress
 <!-- Currently being worked on -->
 
