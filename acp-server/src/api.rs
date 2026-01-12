@@ -263,6 +263,19 @@ pub struct UpdateResponse {
     pub commit_sha: Option<String>,
 }
 
+/// Rotate management certificate request
+#[derive(Debug, Deserialize)]
+pub struct RotateManagementCertRequest {
+    pub sans: Vec<String>,
+}
+
+/// Rotate management certificate response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RotateManagementCertResponse {
+    pub sans: Vec<String>,
+    pub rotated: bool,
+}
+
 /// API error response
 #[derive(Debug, Serialize)]
 pub struct ApiError {
@@ -292,6 +305,7 @@ pub fn create_router(state: ApiState) -> Router {
             post(set_credential).delete(delete_credential),
         )
         .route("/activity", get(get_activity).post(post_activity))
+        .route("/v1/management-cert", post(rotate_management_cert))
         .with_state(state)
 }
 
@@ -863,6 +877,67 @@ async fn post_activity(
     body: Bytes,
 ) -> Result<Json<ActivityResponse>, (StatusCode, String)> {
     get_activity(State(state), body).await
+}
+
+/// POST /v1/management-cert - Rotate management certificate (requires auth)
+async fn rotate_management_cert(
+    State(state): State<ApiState>,
+    body: Bytes,
+) -> Result<Json<RotateManagementCertResponse>, (StatusCode, String)> {
+    use acp_lib::tls::CertificateAuthority;
+
+    // Verify authentication and extract request data
+    let req: RotateManagementCertRequest = verify_auth(&state, &body).await?;
+
+    // Load the CA from storage
+    let ca_cert_pem = state.store
+        .get("ca:cert")
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load CA cert: {}", e)))?
+        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "CA not found in storage".to_string()))?;
+
+    let ca_key_pem = state.store
+        .get("ca:key")
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load CA key: {}", e)))?
+        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "CA key not found in storage".to_string()))?;
+
+    let ca_cert_str = String::from_utf8(ca_cert_pem)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Invalid CA cert encoding: {}", e)))?;
+
+    let ca_key_str = String::from_utf8(ca_key_pem)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Invalid CA key encoding: {}", e)))?;
+
+    let ca = CertificateAuthority::from_pem(&ca_cert_str, &ca_key_str)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load CA: {}", e)))?;
+
+    // Generate new management certificate with provided SANs
+    let (mgmt_cert_der, mgmt_key_der) = ca.sign_server_cert(&req.sans)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate management certificate: {}", e)))?;
+
+    // Convert DER to PEM for storage
+    let mgmt_cert_pem = acp_lib::tls::der_to_pem(&mgmt_cert_der, "CERTIFICATE");
+    let mgmt_key_pem = acp_lib::tls::der_to_pem(&mgmt_key_der, "PRIVATE KEY");
+
+    // Store new management cert and key
+    state.store.set("mgmt:cert", mgmt_cert_pem.as_bytes()).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store management cert: {}", e)))?;
+
+    state.store.set("mgmt:key", mgmt_key_pem.as_bytes()).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store management key: {}", e)))?;
+
+    // Store the SANs used (for reference)
+    let sans_json = serde_json::to_vec(&req.sans)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to serialize SANs: {}", e)))?;
+    state.store.set("mgmt:sans", &sans_json).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store management SANs: {}", e)))?;
+
+    tracing::info!("Rotated management certificate with SANs: {:?}", req.sans);
+
+    Ok(Json(RotateManagementCertResponse {
+        sans: req.sans,
+        rotated: true,
+    }))
 }
 
 #[cfg(test)]
@@ -1928,5 +2003,109 @@ mod tests {
         assert!(mgmt_sans.is_some(), "Management SANs should be stored");
         let sans: Vec<String> = serde_json::from_slice(&mgmt_sans.unwrap()).expect("parse SANs JSON");
         assert_eq!(sans, vec!["DNS:localhost", "IP:127.0.0.1", "IP:::1"]);
+    }
+
+    // RED: Test for POST /v1/management-cert endpoint
+    #[tokio::test]
+    #[serial]
+    async fn test_rotate_management_cert_endpoint() {
+        use acp_lib::tls::CertificateAuthority;
+        use argon2::password_hash::{rand_core::OsRng, SaltString};
+        use argon2::{Argon2, PasswordHasher};
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        std::env::set_var("ACP_DATA_DIR", temp_dir.path());
+
+        let (store, registry, _temp_dir) = create_test_storage().await;
+
+        // Pre-create CA in storage
+        let ca = CertificateAuthority::generate().expect("generate CA");
+        store.set("ca:cert", ca.ca_cert_pem().as_bytes()).await.expect("store CA cert");
+        store.set("ca:key", ca.ca_key_pem().as_bytes()).await.expect("store CA key");
+
+        // Pre-create initial management cert
+        let initial_sans = vec!["DNS:localhost".to_string()];
+        let (initial_cert_der, initial_key_der) = ca.sign_server_cert(&initial_sans).expect("sign initial cert");
+        let initial_cert_pem = acp_lib::tls::der_to_pem(&initial_cert_der, "CERTIFICATE");
+        let initial_key_pem = acp_lib::tls::der_to_pem(&initial_key_der, "PRIVATE KEY");
+        store.set("mgmt:cert", initial_cert_pem.as_bytes()).await.expect("store initial cert");
+        store.set("mgmt:key", initial_key_pem.as_bytes()).await.expect("store initial key");
+
+        let state = ApiState::new(9443, 9080, store.clone(), registry);
+
+        // Set up password hash
+        let password = "testpass123";
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt).unwrap().to_string();
+        state.set_password_hash(password_hash).await;
+
+        let app = create_router(state);
+
+        // Rotate certificate with new SANs
+        let body = serde_json::json!({
+            "password_hash": password,
+            "sans": ["DNS:example.com", "IP:192.168.1.100"]
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/management-cert")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Verify new cert and key were stored
+        let new_cert = store.get("mgmt:cert").await.expect("get new cert");
+        assert!(new_cert.is_some());
+        let new_cert_pem = String::from_utf8(new_cert.unwrap()).expect("parse cert PEM");
+
+        // Cert should be different from initial
+        assert_ne!(new_cert_pem, initial_cert_pem);
+
+        // Verify the response contains cert details
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let response_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+
+        // Response should have sans field
+        assert!(response_json.get("sans").is_some());
+        let returned_sans = response_json["sans"].as_array().unwrap();
+        assert_eq!(returned_sans.len(), 2);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_rotate_management_cert_requires_auth() {
+        let (store, registry, _temp_dir) = create_test_storage().await;
+        let state = ApiState::new(9443, 9080, store, registry);
+        let app = create_router(state);
+
+        // Try to rotate without password
+        let body = serde_json::json!({
+            "sans": ["DNS:example.com"]
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/management-cert")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }
