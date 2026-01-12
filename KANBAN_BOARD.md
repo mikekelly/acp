@@ -11,6 +11,7 @@
 ## Designed
 <!-- Has clear outcomes/spec -->
 
+- Registry Simplification: Convert tokens/credentials from arrays to hashes, store credential values inline, eliminate redundant storage entries (see docs/registry-refactor/plan.md)
 - HTTPS for CLI → proxy communication (defense in depth using existing ca.crt)
 
 ## Ready

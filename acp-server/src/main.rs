@@ -113,10 +113,6 @@ async fn main() -> anyhow::Result<()> {
     let registry = Arc::new(Registry::new(Arc::clone(&store)));
     tracing::info!("Registry initialized");
 
-    // Migrate existing installations (only works for FileStore)
-    // Try to create a FileStore for migration if applicable
-    run_migration_if_file_store(&registry, &config).await;
-
     // Log initial token count from registry
     let initial_tokens = registry.list_tokens().await?;
     tracing::info!("Loaded {} agent tokens from storage", initial_tokens.len());
@@ -191,67 +187,6 @@ async fn load_or_generate_ca(store: &dyn storage::SecretStore) -> anyhow::Result
             tracing::info!("CA certificate saved to storage");
 
             Ok(ca)
-        }
-    }
-}
-
-/// Run migration for existing FileStore installations
-///
-/// This function checks if we're using FileStore (by checking ACP_DATA_DIR env var,
-/// data_dir config, or non-macOS platform) and if so, attempts to migrate existing
-/// tokens/plugins/credentials to the registry.
-async fn run_migration_if_file_store(registry: &Registry, config: &Config) {
-    // Determine if we're using FileStore based on the same logic as create_store()
-    let file_store_path = if let Ok(env_path) = std::env::var("ACP_DATA_DIR") {
-        Some(PathBuf::from(env_path))
-    } else if let Some(ref data_dir) = config.data_dir {
-        Some(PathBuf::from(data_dir))
-    } else {
-        // Only use default path on non-macOS platforms
-        #[cfg(not(target_os = "macos"))]
-        {
-            if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-                Some(PathBuf::from(home).join(".acp").join("secrets"))
-            } else {
-                None
-            }
-        }
-        #[cfg(target_os = "macos")]
-        {
-            None // Using Keychain on macOS by default
-        }
-    };
-
-    // If we have a FileStore path, create one for migration purposes
-    if let Some(path) = file_store_path {
-        match storage::FileStore::new(path).await {
-            Ok(file_store) => {
-                // Run migration
-                match registry.migrate_from_file_store(&file_store).await {
-                    Ok(()) => {
-                        // Check if migration did anything by loading the registry
-                        if let Ok(data) = registry.load().await {
-                            if !data.tokens.is_empty()
-                                || !data.plugins.is_empty()
-                                || !data.credentials.is_empty()
-                            {
-                                tracing::info!(
-                                    "Migrated existing installation: {} tokens, {} plugins, {} credentials",
-                                    data.tokens.len(),
-                                    data.plugins.len(),
-                                    data.credentials.len()
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Migration failed (continuing anyway): {}", e);
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::debug!("Could not create FileStore for migration: {}", e);
-            }
         }
     }
 }

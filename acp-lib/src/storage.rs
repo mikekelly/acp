@@ -80,17 +80,6 @@ impl FileStore {
         let encoded = URL_SAFE_NO_PAD.encode(key.as_bytes());
         self.base_path.join(encoded)
     }
-
-    /// Convert a filename back to a key
-    fn filename_to_key(&self, path: &std::path::Path) -> Option<String> {
-        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-        use base64::Engine;
-
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .and_then(|encoded| URL_SAFE_NO_PAD.decode(encoded).ok())
-            .and_then(|bytes| String::from_utf8(bytes).ok())
-    }
 }
 
 #[async_trait]
@@ -156,32 +145,6 @@ impl SecretStore for FileStore {
     }
 }
 
-impl FileStore {
-    /// List all keys matching a prefix (internal use only)
-    ///
-    /// This method is kept for Phase 5 migration purposes (building registry from existing keys).
-    /// It is not part of the SecretStore trait.
-    ///
-    /// # Arguments
-    /// * `prefix` - Key prefix to match (e.g., "credential:aws-s3:")
-    ///
-    /// Returns sorted list of matching keys.
-    pub async fn list_internal(&self, prefix: &str) -> Result<Vec<String>> {
-        let mut keys = Vec::new();
-
-        let mut entries = tokio::fs::read_dir(&self.base_path).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            if let Some(key) = self.filename_to_key(&entry.path()) {
-                if key.starts_with(prefix) {
-                    keys.push(key);
-                }
-            }
-        }
-
-        keys.sort();
-        Ok(keys)
-    }
-}
 
 /// macOS Keychain secret storage implementation
 ///
