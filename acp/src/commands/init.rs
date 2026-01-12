@@ -5,7 +5,7 @@ use crate::client::ApiClient;
 use anyhow::Result;
 use serde_json::json;
 
-pub async fn run(server_url: &str, ca_path: Option<&str>) -> Result<()> {
+pub async fn run(server_url: &str, ca_path: Option<&str>, management_sans: Option<&str>) -> Result<()> {
     println!("Initializing ACP server...");
     println!();
 
@@ -16,13 +16,21 @@ pub async fn run(server_url: &str, ca_path: Option<&str>) -> Result<()> {
     // Call init endpoint
     let client = ApiClient::new(server_url);
 
-    let body = if let Some(path) = ca_path {
-        json!({
-            "ca_path": path
-        })
-    } else {
-        json!({})
-    };
+    // Parse management SANs if provided
+    let management_sans_vec = management_sans.map(|s| {
+        s.split(',')
+            .map(|san| san.trim().to_string())
+            .collect::<Vec<String>>()
+    });
+
+    // Build request body
+    let mut body = json!({});
+    if let Some(path) = ca_path {
+        body.as_object_mut().unwrap().insert("ca_path".to_string(), json!(path));
+    }
+    if let Some(sans) = management_sans_vec {
+        body.as_object_mut().unwrap().insert("management_sans".to_string(), json!(sans));
+    }
 
     let response: crate::client::InitResponse = client.post_auth("/init", &password_hash, body).await?;
 
@@ -38,4 +46,40 @@ pub async fn run(server_url: &str, ca_path: Option<&str>) -> Result<()> {
     println!("Clients should be configured to trust the CA cert at the path above.");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_parse_management_sans() {
+        // Test parsing comma-separated SANs
+        let input = "DNS:localhost,IP:127.0.0.1";
+        let result: Vec<String> = input.split(',')
+            .map(|san| san.trim().to_string())
+            .collect();
+
+        assert_eq!(result, vec!["DNS:localhost", "IP:127.0.0.1"]);
+    }
+
+    #[test]
+    fn test_parse_management_sans_with_spaces() {
+        // Test parsing with extra whitespace
+        let input = " DNS:localhost , IP:127.0.0.1 , DNS:example.com ";
+        let result: Vec<String> = input.split(',')
+            .map(|san| san.trim().to_string())
+            .collect();
+
+        assert_eq!(result, vec!["DNS:localhost", "IP:127.0.0.1", "DNS:example.com"]);
+    }
+
+    #[test]
+    fn test_parse_management_sans_single() {
+        // Test single SAN
+        let input = "DNS:localhost";
+        let result: Vec<String> = input.split(',')
+            .map(|san| san.trim().to_string())
+            .collect();
+
+        assert_eq!(result, vec!["DNS:localhost"]);
+    }
 }

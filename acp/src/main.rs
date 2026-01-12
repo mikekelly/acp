@@ -30,6 +30,17 @@ enum Commands {
         /// Path to export CA certificate (default: ~/.acp/ca.pem)
         #[arg(long)]
         ca_path: Option<String>,
+
+        /// Management certificate Subject Alternative Names for HTTPS access
+        ///
+        /// Comma-separated list of SANs to include in the management API certificate.
+        /// Each SAN should be prefixed with "DNS:" or "IP:".
+        ///
+        /// Examples:
+        ///   --management-sans "DNS:localhost,IP:127.0.0.1"
+        ///   --management-sans "DNS:acp.local,DNS:localhost,IP:192.168.1.100"
+        #[arg(long, value_name = "SANS")]
+        management_sans: Option<String>,
     },
 
     /// Show server status (version, uptime, ports)
@@ -100,7 +111,7 @@ async fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { ca_path } => commands::init::run(&cli.server, ca_path.as_deref()).await,
+        Commands::Init { ca_path, management_sans } => commands::init::run(&cli.server, ca_path.as_deref(), management_sans.as_deref()).await,
         Commands::Status => commands::status::run(&cli.server).await,
         Commands::Plugins => commands::plugins::list(&cli.server).await,
         Commands::Install { name } => commands::plugins::install(&cli.server, &name).await,
@@ -134,7 +145,7 @@ mod tests {
     fn test_cli_init_with_ca_path() {
         let cli = Cli::parse_from(["acp", "init", "--ca-path", "/tmp/ca.pem"]);
         match cli.command {
-            Commands::Init { ca_path } => {
+            Commands::Init { ca_path, management_sans: _ } => {
                 assert_eq!(ca_path.as_deref(), Some("/tmp/ca.pem"));
             }
             _ => panic!("Expected Init command"),
@@ -237,5 +248,27 @@ mod tests {
     fn test_cli_server_override() {
         let cli = Cli::parse_from(["acp", "--server", "http://custom:8080", "status"]);
         assert_eq!(cli.server, "http://custom:8080");
+    }
+
+    #[test]
+    fn test_cli_init_with_management_sans() {
+        let cli = Cli::parse_from([
+            "acp",
+            "init",
+            "--management-sans",
+            "DNS:localhost,IP:127.0.0.1",
+        ]);
+        match cli.command {
+            Commands::Init {
+                ca_path: _,
+                management_sans,
+            } => {
+                assert_eq!(
+                    management_sans.as_deref(),
+                    Some("DNS:localhost,IP:127.0.0.1")
+                );
+            }
+            _ => panic!("Expected Init command"),
+        }
     }
 }
