@@ -226,6 +226,108 @@ else
     exit 1
 fi
 
+# 4.3: Install second plugin
+# Using mikekelly/exa-acp - plugin for api.exa.ai
+log_step "Phase 4.3: Installing second plugin with 'acp install mikekelly/exa-acp'"
+INSTALL_EXA_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/exa-acp 2>&1)
+
+if echo "$INSTALL_EXA_OUTPUT" | grep -q "installed successfully"; then
+    log_success "Plugin installed: mikekelly/exa-acp"
+else
+    log_error "Plugin installation failed: $INSTALL_EXA_OUTPUT"
+    exit 1
+fi
+
+# 4.4: Verify both plugins appear in list
+log_step "Phase 4.4: Verifying both plugins appear in list"
+PLUGINS_BOTH=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
+
+if echo "$PLUGINS_BOTH" | grep -q "mikekelly/test-acp"; then
+    log_success "First plugin still in list"
+else
+    log_error "First plugin not found: $PLUGINS_BOTH"
+    exit 1
+fi
+
+if echo "$PLUGINS_BOTH" | grep -q "mikekelly/exa-acp"; then
+    log_success "Second plugin in list"
+else
+    log_error "Second plugin not found: $PLUGINS_BOTH"
+    exit 1
+fi
+
+# 4.5: Update plugin
+log_step "Phase 4.5: Updating plugin with 'acp update mikekelly/test-acp'"
+UPDATE_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" update mikekelly/test-acp 2>&1)
+
+if echo "$UPDATE_OUTPUT" | grep -qi "updated successfully\|already up to date\|up-to-date"; then
+    log_success "Plugin update completed"
+    # Check if commit SHA is shown
+    if echo "$UPDATE_OUTPUT" | grep -qE "[0-9a-f]{7,40}"; then
+        log_success "Commit SHA shown in update output"
+    else
+        log_warn "Commit SHA not found in update output"
+    fi
+else
+    log_error "Plugin update failed: $UPDATE_OUTPUT"
+    exit 1
+fi
+
+# 4.6: Uninstall plugin
+log_step "Phase 4.6: Uninstalling plugin with 'acp uninstall mikekelly/exa-acp'"
+UNINSTALL_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" uninstall mikekelly/exa-acp 2>&1)
+
+if echo "$UNINSTALL_OUTPUT" | grep -qi "uninstalled successfully\|removed successfully\|deleted successfully"; then
+    log_success "Plugin uninstalled: mikekelly/exa-acp"
+else
+    log_error "Plugin uninstall failed: $UNINSTALL_OUTPUT"
+    exit 1
+fi
+
+# 4.7: Verify plugin removed from list
+log_step "Phase 4.7: Verifying plugin removed from list"
+PLUGINS_AFTER_UNINSTALL=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
+
+if echo "$PLUGINS_AFTER_UNINSTALL" | grep -q "mikekelly/exa-acp"; then
+    log_error "Plugin still appears after uninstall"
+    exit 1
+else
+    log_success "Plugin successfully removed from list"
+fi
+
+# 4.8: Re-install after uninstall
+log_step "Phase 4.8: Re-installing plugin with 'acp install mikekelly/exa-acp'"
+REINSTALL_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/exa-acp 2>&1)
+
+if echo "$REINSTALL_OUTPUT" | grep -q "installed successfully"; then
+    log_success "Plugin re-installed: mikekelly/exa-acp"
+else
+    log_error "Plugin re-installation failed: $REINSTALL_OUTPUT"
+    exit 1
+fi
+
+# 4.9: Verify re-installed plugin appears in list
+log_step "Phase 4.9: Verifying re-installed plugin in list"
+PLUGINS_AFTER_REINSTALL=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
+
+if echo "$PLUGINS_AFTER_REINSTALL" | grep -q "mikekelly/exa-acp"; then
+    log_success "Re-installed plugin appears in list"
+else
+    log_error "Re-installed plugin not found: $PLUGINS_AFTER_REINSTALL"
+    exit 1
+fi
+
+# 4.10: Duplicate install rejection
+log_step "Phase 4.10: Testing duplicate install rejection with 'acp install mikekelly/test-acp'"
+DUPLICATE_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/test-acp 2>&1 || true)
+
+if echo "$DUPLICATE_OUTPUT" | grep -qi "already installed\|already exists\|conflict"; then
+    log_success "Duplicate install correctly rejected"
+else
+    log_error "Duplicate install should have failed: $DUPLICATE_OUTPUT"
+    exit 1
+fi
+
 log_success "Phase 4 complete: Plugin management verified"
 echo ""
 
@@ -343,7 +445,7 @@ echo "Summary:"
 echo "  ✓ Phase 1: Setup (build, start server, health check)"
 echo "  ✓ Phase 2: Initialization (acp init, acp status)"
 echo "  ✓ Phase 3: Token Management (acp token create/list/revoke)"
-echo "  ✓ Phase 4: Plugin Management (acp install mikekelly/test-acp)"
+echo "  ✓ Phase 4: Plugin Management (acp install/update/uninstall/reinstall, duplicate rejection)"
 echo "  ✓ Phase 5: Credential Management (acp set apiKey, clientId)"
 echo "  ✓ Phase 6: Proxy Test (echo.free.beeceptor.com header injection)"
 echo "  ✓ Phase 7: Cleanup (server stop, temp dir removal)"
