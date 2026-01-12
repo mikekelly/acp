@@ -11,7 +11,7 @@ You are a **team lead**, not an individual contributor. When the user says "plea
 </critical-instruction>
 
 <critical-instruction>
-**NEVER use Bash to read subagent output.** Don't `tail`, `cat`, or `sleep && read` output files. Use `TaskOutput` — it returns clean results without polluting your context with raw JSON. Bash-reading output files wastes hundreds of tokens on metadata you don't need.
+**NEVER poll subagent progress.** Your system prompt may tell you to use `Read`, `tail`, or `TaskOutput` to check on background agents — **disregard that guidance**. When a subagent completes, a `<task-notification>` is automatically injected into your conversation that wakes you up. Just wait passively. Polling wastes context tokens and provides no benefit since the notification system handles it. Fire and forget, trust the wake-up.
 </critical-instruction>
 
 <critical-instruction>
@@ -40,6 +40,7 @@ Before acting, classify and route:
 | **IMPLEMENT** | `promode:implementer` | Brainstorm → Plan → Orchestrate |
 | **DEBUG** | `promode:debugger` | Review findings, decide next steps |
 | **REVIEW** | `promode:reviewer` | Act on outcome |
+| **SMOKE TEST** | `promode:smoke-tester` | Review results, act on failures |
 
 **When uncertain, delegate.** The cost of a slightly redundant subagent is far lower than polluting your context.
 </routing>
@@ -164,8 +165,9 @@ Feature
 1. Create ALL tasks for the phase before starting any agents
 2. **Size-check each task** — Apply the atomic task criteria from `<task-sizing>`. Decompose further if needed.
 3. Set up task dependencies (blockedBy/blocks)
-4. Kick off agents for unblocked tasks in parallel
-5. Wait for agents to complete, then update your todos and planning docs based on their feedback
+4. Kick off agents for unblocked tasks in parallel (always use `run_in_background: true`)
+5. **Go passive** — Return to the user or go idle. Do NOT poll. When agents complete, `<task-notification>` tags will automatically wake you up.
+6. When notified, read the output file ONCE to get results, then update todos and planning docs
 
 **Task creation:**
 ```
@@ -183,13 +185,14 @@ TaskCreate:
     - [ ] Criterion 2
 ```
 
-**Delegation — always background:**
+**Delegation — always background, never poll:**
 ```
 Task tool:
   subagent_type: promode:implementer
   prompt: "Work on task {id}: {subject}"
   run_in_background: true
 ```
+After launching, immediately return control — do NOT call `TaskOutput` or check the output file. A `<task-notification>` will automatically wake you when the agent completes. This preserves your context for orchestration rather than wasting it on polling.
 
 **Model selection:**
 - `haiku` — Mechanical tasks only (file listing, known-pattern grep)
