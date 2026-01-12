@@ -138,23 +138,6 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // Create API state with storage backend and registry
-    let api_state = api::ApiState::new(
-        config.proxy_port,
-        config.api_port,
-        Arc::clone(&store),
-        Arc::clone(&registry),
-    );
-
-    // Load persisted password hash from registry (if server was previously initialized)
-    if let Ok(Some(hash)) = registry.get_password_hash().await {
-        api_state.set_password_hash(hash).await;
-        tracing::info!("Loaded password hash from registry");
-    }
-
-    // Build the API router
-    let app = api::create_router(api_state);
-
     // Load management certificate for HTTPS
     let mgmt_cert_pem = store.get("mgmt:cert").await?
         .ok_or_else(|| anyhow::anyhow!("Management certificate not found"))?;
@@ -166,6 +149,24 @@ async fn main() -> anyhow::Result<()> {
         mgmt_cert_pem,
         mgmt_key_pem
     ).await?;
+
+    // Create API state with storage backend, registry, and TLS config
+    let api_state = api::ApiState::new_with_tls(
+        config.proxy_port,
+        config.api_port,
+        Arc::clone(&store),
+        Arc::clone(&registry),
+        tls_config.clone(),
+    );
+
+    // Load persisted password hash from registry (if server was previously initialized)
+    if let Ok(Some(hash)) = registry.get_password_hash().await {
+        api_state.set_password_hash(hash).await;
+        tracing::info!("Loaded password hash from registry");
+    }
+
+    // Build the API router
+    let app = api::create_router(api_state);
 
     // Bind address for HTTPS server
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], config.api_port));

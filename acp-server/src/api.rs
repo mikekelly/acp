@@ -40,6 +40,8 @@ pub struct ApiState {
     pub store: Arc<dyn SecretStore>,
     /// Registry for centralized metadata storage
     pub registry: Arc<Registry>,
+    /// TLS configuration for hot-reloading certificates
+    pub tls_config: Option<axum_server::tls_rustls::RustlsConfig>,
 }
 
 impl ApiState {
@@ -58,6 +60,27 @@ impl ApiState {
             activity: Arc::new(RwLock::new(Vec::new())),
             store,
             registry,
+            tls_config: None,
+        }
+    }
+
+    /// Create ApiState with TLS config for hot-reloading
+    pub fn new_with_tls(
+        proxy_port: u16,
+        api_port: u16,
+        store: Arc<dyn SecretStore>,
+        registry: Arc<Registry>,
+        tls_config: axum_server::tls_rustls::RustlsConfig,
+    ) -> Self {
+        Self {
+            start_time: std::time::Instant::now(),
+            proxy_port,
+            api_port,
+            password_hash: Arc::new(RwLock::new(None)),
+            activity: Arc::new(RwLock::new(Vec::new())),
+            store,
+            registry,
+            tls_config: Some(tls_config),
         }
     }
 
@@ -931,6 +954,16 @@ async fn rotate_management_cert(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to serialize SANs: {}", e)))?;
     state.store.set("mgmt:sans", &sans_json).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store management SANs: {}", e)))?;
+
+    // Hot-reload TLS config if available
+    if let Some(ref tls_config) = state.tls_config {
+        tls_config.reload_from_pem(
+            mgmt_cert_pem.as_bytes().to_vec(),
+            mgmt_key_pem.as_bytes().to_vec()
+        ).await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to reload TLS config: {}", e)))?;
+        tracing::info!("TLS config reloaded with new certificate");
+    }
 
     tracing::info!("Rotated management certificate with SANs: {:?}", req.sans);
 
@@ -2107,5 +2140,73 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // Test for TLS hot-swap - verify rotate_management_cert updates storage and attempts reload
+    #[tokio::test]
+    #[serial]
+    async fn test_rotate_management_cert_hot_swap() {
+        use acp_lib::tls::CertificateAuthority;
+        use argon2::password_hash::{rand_core::OsRng, SaltString};
+        use argon2::{Argon2, PasswordHasher};
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        std::env::set_var("ACP_DATA_DIR", temp_dir.path());
+
+        let (store, registry, _temp_dir) = create_test_storage().await;
+
+        // Pre-create CA in storage
+        let ca = CertificateAuthority::generate().expect("generate CA");
+        store.set("ca:cert", ca.ca_cert_pem().as_bytes()).await.expect("store CA cert");
+        store.set("ca:key", ca.ca_key_pem().as_bytes()).await.expect("store CA key");
+
+        // Pre-create initial management cert
+        let initial_sans = vec!["DNS:localhost".to_string()];
+        let (initial_cert_der, initial_key_der) = ca.sign_server_cert(&initial_sans).expect("sign initial cert");
+        let initial_cert_pem = acp_lib::tls::der_to_pem(&initial_cert_der, "CERTIFICATE");
+        let initial_key_pem = acp_lib::tls::der_to_pem(&initial_key_der, "PRIVATE KEY");
+        store.set("mgmt:cert", initial_cert_pem.as_bytes()).await.expect("store initial cert");
+        store.set("mgmt:key", initial_key_pem.as_bytes()).await.expect("store initial key");
+
+        // Create ApiState without TLS config (tls_config field will be None)
+        // This simulates the scenario where hot-swap is optional
+        let state = ApiState::new(9443, 9080, store.clone(), registry);
+
+        // Set up password hash
+        let password = "testpass123";
+        let salt = SaltString::generate(&mut OsRng);
+        let argon2 = Argon2::default();
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt).unwrap().to_string();
+        state.set_password_hash(password_hash).await;
+
+        let app = create_router(state);
+
+        // Rotate certificate with new SANs
+        let body = serde_json::json!({
+            "password_hash": password,
+            "sans": ["DNS:example.com", "IP:192.168.1.100"]
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/management-cert")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Verify new cert and key were stored
+        let new_cert = store.get("mgmt:cert").await.expect("get new cert");
+        assert!(new_cert.is_some());
+        let new_cert_pem = String::from_utf8(new_cert.unwrap()).expect("parse cert PEM");
+
+        // Cert should be different from initial (rotation occurred)
+        assert_ne!(new_cert_pem, initial_cert_pem);
     }
 }
