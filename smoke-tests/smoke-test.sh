@@ -201,11 +201,13 @@ log_step "Phase 4: Plugin Management"
 echo "-----------------------------------"
 
 # 4.1: Install plugin using CLI
-log_step "Phase 4.1: Installing plugin with 'acp install mikekelly/exa-acp'"
-INSTALL_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/exa-acp 2>&1)
+# Using mikekelly/test-acp - a test plugin for echo.free.beeceptor.com
+# See: https://github.com/mikekelly/test-acp
+log_step "Phase 4.1: Installing plugin with 'acp install mikekelly/test-acp'"
+INSTALL_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/test-acp 2>&1)
 
 if echo "$INSTALL_OUTPUT" | grep -q "installed successfully"; then
-    log_success "Plugin installed: mikekelly/exa-acp"
+    log_success "Plugin installed: mikekelly/test-acp"
 else
     log_error "Plugin installation failed: $INSTALL_OUTPUT"
     exit 1
@@ -215,10 +217,10 @@ fi
 log_step "Phase 4.2: Listing plugins with 'acp plugins'"
 PLUGINS_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
 
-if echo "$PLUGINS_OUTPUT" | grep -q "mikekelly/exa-acp"; then
+if echo "$PLUGINS_OUTPUT" | grep -q "mikekelly/test-acp"; then
     log_success "Plugin appears in list"
     # Show plugin details
-    echo "$PLUGINS_OUTPUT" | grep -A5 "mikekelly/exa-acp" | head -6
+    echo "$PLUGINS_OUTPUT" | grep -A5 "mikekelly/test-acp" | head -6
 else
     log_error "Plugin not found in list: $PLUGINS_OUTPUT"
     exit 1
@@ -231,29 +233,104 @@ echo ""
 log_step "Phase 5: Credential Management"
 echo "-----------------------------------"
 
-# 5.1: Set credentials using CLI
-log_step "Phase 5.1: Setting credential with 'acp set mikekelly/exa-acp:apiKey'"
-CRED_VALUE="test-secret-key-$(date +%s)"
-export ACP_CREDENTIAL_VALUE="$CRED_VALUE"
+# 5.1: Set apiKey credential
+log_step "Phase 5.1: Setting credential with 'acp set mikekelly/test-acp:apiKey'"
+TEST_API_KEY="test-api-key-$(date +%s)"
+export ACP_CREDENTIAL_VALUE="$TEST_API_KEY"
 
-SET_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" set "mikekelly/exa-acp:apiKey" 2>&1)
+SET_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" set "mikekelly/test-acp:apiKey" 2>&1)
 
 if echo "$SET_OUTPUT" | grep -qi "set successfully\|success"; then
-    log_success "Credential set successfully"
+    log_success "apiKey credential set successfully"
 else
-    log_error "Credential setting failed: $SET_OUTPUT"
+    log_error "apiKey credential setting failed: $SET_OUTPUT"
+    exit 1
+fi
+
+# 5.2: Set clientId credential
+log_step "Phase 5.2: Setting credential with 'acp set mikekelly/test-acp:clientId'"
+TEST_CLIENT_ID="test-client-id-$(date +%s)"
+export ACP_CREDENTIAL_VALUE="$TEST_CLIENT_ID"
+
+SET_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" set "mikekelly/test-acp:clientId" 2>&1)
+
+if echo "$SET_OUTPUT" | grep -qi "set successfully\|success"; then
+    log_success "clientId credential set successfully"
+else
+    log_error "clientId credential setting failed: $SET_OUTPUT"
     exit 1
 fi
 
 log_success "Phase 5 complete: Credential management verified"
 echo ""
 
-# Phase 6: Cleanup
-log_step "Phase 6: Cleanup"
+# Phase 6: Proxy Test with Echo API
+log_step "Phase 6: Proxy Test"
+echo "-----------------------------------"
+
+# 6.1: Create a token for proxy authentication
+log_step "Phase 6.1: Creating token for proxy test"
+PROXY_TOKEN_NAME="proxy-test-$(date +%s)"
+PROXY_TOKEN_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" token create "$PROXY_TOKEN_NAME" 2>&1)
+
+if echo "$PROXY_TOKEN_OUTPUT" | grep -q "Token created"; then
+    PROXY_TOKEN=$(echo "$PROXY_TOKEN_OUTPUT" | grep "Token:" | awk '{print $2}')
+    log_success "Proxy token created: $PROXY_TOKEN"
+else
+    log_error "Proxy token creation failed: $PROXY_TOKEN_OUTPUT"
+    exit 1
+fi
+
+# 6.2: Test proxy with echo API
+# The test-acp plugin injects X-Api-Key and X-Client-Id headers
+# Echo API at echo.free.beeceptor.com returns the request details as JSON
+log_step "Phase 6.2: Testing proxy with echo.free.beeceptor.com"
+
+ECHO_RESPONSE=$(curl -s -k \
+    -x "http://127.0.0.1:$PROXY_PORT" \
+    --proxy-header "Proxy-Authorization: Bearer $PROXY_TOKEN" \
+    "https://echo.free.beeceptor.com/smoke-test" 2>&1)
+
+# Verify X-Api-Key header was injected
+if echo "$ECHO_RESPONSE" | grep -q "X-Api-Key"; then
+    log_success "X-Api-Key header injected by plugin"
+else
+    log_error "X-Api-Key header not found in response"
+    echo "Response: $ECHO_RESPONSE"
+    exit 1
+fi
+
+# Verify X-Client-Id header was injected
+if echo "$ECHO_RESPONSE" | grep -q "X-Client-Id"; then
+    log_success "X-Client-Id header injected by plugin"
+else
+    log_error "X-Client-Id header not found in response"
+    echo "Response: $ECHO_RESPONSE"
+    exit 1
+fi
+
+# Verify the actual credential values
+if echo "$ECHO_RESPONSE" | grep -q "$TEST_API_KEY"; then
+    log_success "X-Api-Key contains correct value"
+else
+    log_warn "X-Api-Key value mismatch (header present but value differs)"
+fi
+
+if echo "$ECHO_RESPONSE" | grep -q "$TEST_CLIENT_ID"; then
+    log_success "X-Client-Id contains correct value"
+else
+    log_warn "X-Client-Id value mismatch (header present but value differs)"
+fi
+
+log_success "Phase 6 complete: Proxy header injection verified"
+echo ""
+
+# Phase 7: Cleanup
+log_step "Phase 7: Cleanup"
 echo "-----------------------------------"
 
 # The trap will handle actual cleanup
-log_success "Phase 6 complete: Cleanup will execute on exit"
+log_success "Phase 7 complete: Cleanup will execute on exit"
 echo ""
 
 # Final summary
@@ -266,9 +343,10 @@ echo "Summary:"
 echo "  ✓ Phase 1: Setup (build, start server, health check)"
 echo "  ✓ Phase 2: Initialization (acp init, acp status)"
 echo "  ✓ Phase 3: Token Management (acp token create/list/revoke)"
-echo "  ✓ Phase 4: Plugin Management (acp install, acp plugins)"
-echo "  ✓ Phase 5: Credential Management (acp set)"
-echo "  ✓ Phase 6: Cleanup (server stop, temp dir removal)"
+echo "  ✓ Phase 4: Plugin Management (acp install mikekelly/test-acp)"
+echo "  ✓ Phase 5: Credential Management (acp set apiKey, clientId)"
+echo "  ✓ Phase 6: Proxy Test (echo.free.beeceptor.com header injection)"
+echo "  ✓ Phase 7: Cleanup (server stop, temp dir removal)"
 echo ""
 log_success "Comprehensive smoke test completed successfully"
 exit 0
