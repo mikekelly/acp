@@ -572,6 +572,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_server_creation() {
+        // Install default crypto provider for rustls (required for TLS operations)
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
         let ca = CertificateAuthority::generate().expect("CA generation failed");
         let tokens = vec![AgentToken::new("Test Agent")];
 

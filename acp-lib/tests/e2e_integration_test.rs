@@ -66,10 +66,14 @@ impl TestServer {
             .arg("warn")
             .spawn()?;
 
-        let api_url = format!("http://localhost:{}", api_port);
+        let api_url = format!("https://localhost:{}", api_port);
 
         // Wait for server to be ready
-        let client = Client::new();
+        // Use danger_accept_invalid_certs for test environments with self-signed certs
+        let client = Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .expect("Failed to build client");
         let mut retries = 30;
         while retries > 0 {
             if let Ok(resp) = client.get(&format!("{}/status", api_url)).send().await {
@@ -95,9 +99,17 @@ impl TestServer {
         })
     }
 
+    /// Create a test client that accepts self-signed certs
+    fn create_test_client() -> Client {
+        Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .expect("Failed to build test client")
+    }
+
     /// Initialize server with password
     async fn init(&self, password: &str) -> anyhow::Result<()> {
-        let client = Client::new();
+        let client = Self::create_test_client();
 
         // Hash password with SHA512 (client-side)
         let mut hasher = Sha512::new();
@@ -121,7 +133,7 @@ impl TestServer {
 
     /// Get server status (unauthenticated)
     async fn status(&self) -> anyhow::Result<serde_json::Value> {
-        let client = Client::new();
+        let client = Self::create_test_client();
         let response = client
             .get(&format!("{}/status", self.api_url))
             .send()
@@ -294,7 +306,7 @@ async fn test_token_management_flow() {
     let server = TestServer::start().await.expect("Failed to start server");
     server.init("test_password_123").await.expect("Init failed");
 
-    let client = Client::new();
+    let client = TestServer::create_test_client();
     let password = "test_password_123";
 
     // Create a token
@@ -381,7 +393,7 @@ async fn test_complete_integration_flow() {
     // Step 1: Initialize
     server.init("secure_password_456").await.expect("Init failed");
 
-    let client = Client::new();
+    let client = TestServer::create_test_client();
     let password = "secure_password_456";
 
     // Step 2: Set credential (via API)
@@ -442,7 +454,7 @@ async fn test_token_sharing_between_api_and_proxy() {
     let server = TestServer::start().await.expect("Failed to start server");
     server.init("test_password_789").await.expect("Init failed");
 
-    let client = Client::new();
+    let client = TestServer::create_test_client();
     let password = "test_password_789";
 
     // Create first token via API
