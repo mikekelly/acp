@@ -101,7 +101,7 @@ pub async fn parse_and_transform<S: SecretStore + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry::{CredentialEntry, Registry};
+    use crate::registry::Registry;
     use crate::storage::FileStore;
     use std::sync::Arc;
 

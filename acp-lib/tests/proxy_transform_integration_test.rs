@@ -7,7 +7,7 @@
 //! 4. Applies plugin transforms
 //! 5. Forwards transformed requests
 
-use acp_lib::registry::{CredentialEntry, PluginEntry, Registry};
+use acp_lib::registry::{PluginEntry, Registry};
 use acp_lib::storage::{FileStore, SecretStore};
 use acp_lib::proxy_transforms::parse_and_transform;
 use std::sync::Arc;
