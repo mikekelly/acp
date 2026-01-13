@@ -228,11 +228,6 @@ struct PluginRow: View {
                 Text(plugin.matchPatterns.joined(separator: ", "))
                     .font(.caption)
                     .foregroundColor(.secondary)
-                if !plugin.credentialSchema.isEmpty {
-                    Text("Credentials: \(plugin.credentialSchema.joined(separator: ", "))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
             }
 
             Spacer()

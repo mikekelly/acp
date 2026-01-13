@@ -55,7 +55,7 @@
         "key": "Set credentials",
         "location": {
           "startingColumn": 23,
-          "startingLine": 245
+          "startingLine": 240
         }
       },
       {
@@ -63,7 +63,7 @@
         "key": "Update plugin",
         "location": {
           "startingColumn": 19,
-          "startingLine": 255
+          "startingLine": 250
         }
       },
       {
@@ -71,15 +71,7 @@
         "key": "Uninstall plugin",
         "location": {
           "startingColumn": 19,
-          "startingLine": 262
-        }
-      },
-      {
-        "comment": "",
-        "key": "Credentials: %@",
-        "location": {
-          "startingColumn": 26,
-          "startingLine": 232
+          "startingLine": 257
         }
       },
       {
@@ -87,7 +79,7 @@
         "key": "Set Credentials",
         "location": {
           "startingColumn": 18,
-          "startingLine": 269
+          "startingLine": 264
         }
       },
       {
@@ -95,7 +87,7 @@
         "key": "Enter value",
         "location": {
           "startingColumn": 33,
-          "startingLine": 283
+          "startingLine": 278
         }
       },
       {
@@ -103,7 +95,7 @@
         "key": "Set",
         "location": {
           "startingColumn": 34,
-          "startingLine": 292
+          "startingLine": 287
         }
       },
       {
@@ -111,7 +103,7 @@
         "key": "No tokens created",
         "location": {
           "startingColumn": 22,
-          "startingLine": 430
+          "startingLine": 425
         }
       },
       {
@@ -119,7 +111,7 @@
         "key": "Loading tokens...",
         "location": {
           "startingColumn": 30,
-          "startingLine": 426
+          "startingLine": 421
         }
       },
       {
@@ -127,7 +119,7 @@
         "key": "Agent Tokens",
         "location": {
           "startingColumn": 22,
-          "startingLine": 364
+          "startingLine": 359
         }
       },
       {
@@ -135,7 +127,7 @@
         "key": "Token name (e.g., claude-code)",
         "location": {
           "startingColumn": 31,
-          "startingLine": 369
+          "startingLine": 364
         }
       },
       {
@@ -143,7 +135,7 @@
         "key": "Create",
         "location": {
           "startingColumn": 34,
-          "startingLine": 378
+          "startingLine": 373
         }
       },
       {
@@ -151,7 +143,7 @@
         "key": "Token created:",
         "location": {
           "startingColumn": 30,
-          "startingLine": 396
+          "startingLine": 391
         }
       },
       {
@@ -159,7 +151,7 @@
         "key": "Copy to clipboard",
         "location": {
           "startingColumn": 31,
-          "startingLine": 403
+          "startingLine": 398
         }
       },
       {
@@ -167,7 +159,7 @@
         "key": "Dismiss",
         "location": {
           "startingColumn": 32,
-          "startingLine": 404
+          "startingLine": 399
         }
       },
       {
@@ -175,7 +167,7 @@
         "key": "Revoke",
         "location": {
           "startingColumn": 20,
-          "startingLine": 514
+          "startingLine": 509
         }
       },
       {
@@ -183,7 +175,7 @@
         "key": "Created: %@",
         "location": {
           "startingColumn": 26,
-          "startingLine": 506
+          "startingLine": 501
         }
       },
       {
@@ -191,7 +183,7 @@
         "key": "No activity recorded",
         "location": {
           "startingColumn": 22,
-          "startingLine": 584
+          "startingLine": 579
         }
       },
       {
@@ -199,7 +191,7 @@
         "key": "Loading activity...",
         "location": {
           "startingColumn": 30,
-          "startingLine": 580
+          "startingLine": 575
         }
       },
       {
@@ -207,7 +199,7 @@
         "key": "Activity Log",
         "location": {
           "startingColumn": 22,
-          "startingLine": 545
+          "startingLine": 540
         }
       },
       {
@@ -215,7 +207,7 @@
         "key": "Auto-refresh",
         "location": {
           "startingColumn": 24,
-          "startingLine": 551
+          "startingLine": 546
         }
       },
       {
@@ -223,7 +215,7 @@
         "key": "Time",
         "location": {
           "startingColumn": 33,
-          "startingLine": 589
+          "startingLine": 584
         }
       },
       {
@@ -231,7 +223,7 @@
         "key": "Method",
         "location": {
           "startingColumn": 33,
-          "startingLine": 595
+          "startingLine": 590
         }
       },
       {
@@ -239,7 +231,7 @@
         "key": "URL",
         "location": {
           "startingColumn": 33,
-          "startingLine": 602
+          "startingLine": 597
         }
       },
       {
@@ -247,7 +239,7 @@
         "key": "Agent",
         "location": {
           "startingColumn": 33,
-          "startingLine": 610
+          "startingLine": 605
         }
       },
       {
@@ -255,7 +247,7 @@
         "key": "Status",
         "location": {
           "startingColumn": 33,
-          "startingLine": 616
+          "startingLine": 611
         }
       },
       {
@@ -263,7 +255,7 @@
         "key": "%lld",
         "location": {
           "startingColumn": 30,
-          "startingLine": 617
+          "startingLine": 612
         }
       }
     ]
