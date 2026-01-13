@@ -69,11 +69,11 @@ struct PluginsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header with install form
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Installed Plugins")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+            // Install plugin section
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Install a Plugin")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
 
                 HStack {
                     TextField("owner/repo (e.g., mikekelly/exa-acp)", text: $newPluginRepo)
@@ -89,13 +89,6 @@ struct PluginsView: View {
                         }
                     }
                     .disabled(newPluginRepo.isEmpty || isInstalling)
-
-                    Spacer()
-
-                    Button(action: { Task { await refresh() } }) {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(isLoading)
                 }
 
                 if let error = errorMessage {
@@ -111,6 +104,25 @@ struct PluginsView: View {
                 }
             }
             .padding()
+            .background(Color(NSColor.controlBackgroundColor))
+
+            Divider()
+
+            // Installed plugins header
+            HStack {
+                Text("Installed Plugins")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Spacer()
+
+                Button(action: { Task { await refresh() } }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .disabled(isLoading)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
 
             Divider()
 

@@ -7,7 +7,7 @@
         "key": "No plugins installed",
         "location": {
           "startingColumn": 22,
-          "startingLine": 124
+          "startingLine": 136
         }
       },
       {
@@ -15,12 +15,12 @@
         "key": "Loading plugins...",
         "location": {
           "startingColumn": 30,
-          "startingLine": 120
+          "startingLine": 132
         }
       },
       {
         "comment": "",
-        "key": "Installed Plugins",
+        "key": "Install a Plugin",
         "location": {
           "startingColumn": 22,
           "startingLine": 74
@@ -28,7 +28,7 @@
       },
       {
         "comment": "",
-        "key": "owner/repo (e.g., mikekelly/exa-ncp)",
+        "key": "owner/repo (e.g., mikekelly/exa-acp)",
         "location": {
           "startingColumn": 31,
           "startingLine": 79
@@ -44,10 +44,18 @@
       },
       {
         "comment": "",
+        "key": "Installed Plugins",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 113
+        }
+      },
+      {
+        "comment": "",
         "key": "Update",
         "location": {
           "startingColumn": 20,
-          "startingLine": 226
+          "startingLine": 238
         }
       },
       {
@@ -55,7 +63,7 @@
         "key": "Uninstall",
         "location": {
           "startingColumn": 20,
-          "startingLine": 229
+          "startingLine": 241
         }
       },
       {
@@ -63,7 +71,7 @@
         "key": "Credentials: %@",
         "location": {
           "startingColumn": 26,
-          "startingLine": 218
+          "startingLine": 230
         }
       },
       {
@@ -71,7 +79,7 @@
         "key": "No tokens created",
         "location": {
           "startingColumn": 22,
-          "startingLine": 319
+          "startingLine": 331
         }
       },
       {
@@ -79,7 +87,7 @@
         "key": "Loading tokens...",
         "location": {
           "startingColumn": 30,
-          "startingLine": 315
+          "startingLine": 327
         }
       },
       {
@@ -87,7 +95,7 @@
         "key": "Agent Tokens",
         "location": {
           "startingColumn": 22,
-          "startingLine": 253
+          "startingLine": 265
         }
       },
       {
@@ -95,7 +103,7 @@
         "key": "Token name (e.g., claude-code)",
         "location": {
           "startingColumn": 31,
-          "startingLine": 258
+          "startingLine": 270
         }
       },
       {
@@ -103,7 +111,7 @@
         "key": "Create",
         "location": {
           "startingColumn": 34,
-          "startingLine": 267
+          "startingLine": 279
         }
       },
       {
@@ -111,7 +119,7 @@
         "key": "Token created:",
         "location": {
           "startingColumn": 30,
-          "startingLine": 285
+          "startingLine": 297
         }
       },
       {
@@ -119,7 +127,7 @@
         "key": "Copy to clipboard",
         "location": {
           "startingColumn": 31,
-          "startingLine": 292
+          "startingLine": 304
         }
       },
       {
@@ -127,7 +135,7 @@
         "key": "Dismiss",
         "location": {
           "startingColumn": 32,
-          "startingLine": 293
+          "startingLine": 305
         }
       },
       {
@@ -135,7 +143,7 @@
         "key": "Revoke",
         "location": {
           "startingColumn": 20,
-          "startingLine": 403
+          "startingLine": 415
         }
       },
       {
@@ -143,7 +151,7 @@
         "key": "Created: %@",
         "location": {
           "startingColumn": 26,
-          "startingLine": 395
+          "startingLine": 407
         }
       },
       {
@@ -151,7 +159,7 @@
         "key": "Set Credential",
         "location": {
           "startingColumn": 22,
-          "startingLine": 455
+          "startingLine": 467
         }
       },
       {
@@ -159,7 +167,7 @@
         "key": "Plugin Credential Requirements",
         "location": {
           "startingColumn": 22,
-          "startingLine": 543
+          "startingLine": 555
         }
       },
       {
@@ -167,7 +175,7 @@
         "key": "Credential Management",
         "location": {
           "startingColumn": 22,
-          "startingLine": 441
+          "startingLine": 453
         }
       },
       {
@@ -175,7 +183,7 @@
         "key": "Credentials are write-only for security. You can set or delete them, but not view their values.",
         "location": {
           "startingColumn": 22,
-          "startingLine": 445
+          "startingLine": 457
         }
       },
       {
@@ -183,7 +191,7 @@
         "key": "Plugin:",
         "location": {
           "startingColumn": 30,
-          "startingLine": 459
+          "startingLine": 471
         }
       },
       {
@@ -191,7 +199,7 @@
         "key": "",
         "location": {
           "startingColumn": 32,
-          "startingLine": 461
+          "startingLine": 473
         }
       },
       {
@@ -199,7 +207,7 @@
         "key": "Select a plugin...",
         "location": {
           "startingColumn": 34,
-          "startingLine": 462
+          "startingLine": 474
         }
       },
       {
@@ -207,7 +215,7 @@
         "key": "Credential:",
         "location": {
           "startingColumn": 30,
-          "startingLine": 475
+          "startingLine": 487
         }
       },
       {
@@ -215,7 +223,7 @@
         "key": "",
         "location": {
           "startingColumn": 32,
-          "startingLine": 477
+          "startingLine": 489
         }
       },
       {
@@ -223,7 +231,7 @@
         "key": "Select a credential...",
         "location": {
           "startingColumn": 34,
-          "startingLine": 478
+          "startingLine": 490
         }
       },
       {
@@ -231,7 +239,7 @@
         "key": "Value:",
         "location": {
           "startingColumn": 30,
-          "startingLine": 491
+          "startingLine": 503
         }
       },
       {
@@ -239,7 +247,7 @@
         "key": "Enter credential value",
         "location": {
           "startingColumn": 37,
-          "startingLine": 493
+          "startingLine": 505
         }
       },
       {
@@ -247,7 +255,7 @@
         "key": "Delete Credential",
         "location": {
           "startingColumn": 32,
-          "startingLine": 513
+          "startingLine": 525
         }
       },
       {
@@ -255,7 +263,7 @@
         "key": "Set Credential",
         "location": {
           "startingColumn": 38,
-          "startingLine": 508
+          "startingLine": 520
         }
       },
       {
@@ -263,7 +271,7 @@
         "key": "No plugins installed",
         "location": {
           "startingColumn": 26,
-          "startingLine": 545
+          "startingLine": 557
         }
       },
       {
@@ -271,7 +279,7 @@
         "key": "No credentials required",
         "location": {
           "startingColumn": 38,
-          "startingLine": 554
+          "startingLine": 566
         }
       },
       {
@@ -279,7 +287,7 @@
         "key": "Required: %@",
         "location": {
           "startingColumn": 38,
-          "startingLine": 558
+          "startingLine": 570
         }
       },
       {
@@ -287,7 +295,7 @@
         "key": "No activity recorded",
         "location": {
           "startingColumn": 22,
-          "startingLine": 682
+          "startingLine": 694
         }
       },
       {
@@ -295,7 +303,7 @@
         "key": "Loading activity...",
         "location": {
           "startingColumn": 30,
-          "startingLine": 678
+          "startingLine": 690
         }
       },
       {
@@ -303,7 +311,7 @@
         "key": "Activity Log",
         "location": {
           "startingColumn": 22,
-          "startingLine": 643
+          "startingLine": 655
         }
       },
       {
@@ -311,7 +319,7 @@
         "key": "Auto-refresh",
         "location": {
           "startingColumn": 24,
-          "startingLine": 649
+          "startingLine": 661
         }
       },
       {
@@ -319,7 +327,7 @@
         "key": "Time",
         "location": {
           "startingColumn": 33,
-          "startingLine": 687
+          "startingLine": 699
         }
       },
       {
@@ -327,7 +335,7 @@
         "key": "Method",
         "location": {
           "startingColumn": 33,
-          "startingLine": 693
+          "startingLine": 705
         }
       },
       {
@@ -335,7 +343,7 @@
         "key": "URL",
         "location": {
           "startingColumn": 33,
-          "startingLine": 700
+          "startingLine": 712
         }
       },
       {
@@ -343,7 +351,7 @@
         "key": "Agent",
         "location": {
           "startingColumn": 33,
-          "startingLine": 708
+          "startingLine": 720
         }
       },
       {
@@ -351,7 +359,7 @@
         "key": "Status",
         "location": {
           "startingColumn": 33,
-          "startingLine": 714
+          "startingLine": 726
         }
       },
       {
@@ -359,7 +367,7 @@
         "key": "%lld",
         "location": {
           "startingColumn": 30,
-          "startingLine": 715
+          "startingLine": 727
         }
       }
     ]
