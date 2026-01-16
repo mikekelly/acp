@@ -6,7 +6,7 @@
 //! - Certificate caching with expiration
 //! - PEM serialization/deserialization
 
-use crate::{AcpError, Result};
+use crate::{GapError, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
@@ -79,7 +79,7 @@ impl CertificateAuthority {
 
         // Generate CA key pair
         let key_pair = KeyPair::generate()
-            .map_err(|e| AcpError::tls(format!("Failed to generate CA key pair: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to generate CA key pair: {}", e)))?;
 
         // Set up CA parameters
         let mut params = CertificateParams::default();
@@ -106,7 +106,7 @@ impl CertificateAuthority {
 
         // Generate self-signed CA certificate
         let cert = params.self_signed(&key_pair)
-            .map_err(|e| AcpError::tls(format!("Failed to generate CA certificate: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to generate CA certificate: {}", e)))?;
 
         let ca_cert_pem = cert.pem();
         let ca_key_pem = key_pair.serialize_pem();
@@ -173,7 +173,7 @@ impl CertificateAuthority {
         // Check cache first
         {
             let mut cache = self.cache.write()
-                .map_err(|_| AcpError::tls("Failed to acquire cache write lock"))?;
+                .map_err(|_| GapError::tls("Failed to acquire cache write lock"))?;
 
             if let Some(cached) = cache.get(hostname) {
                 return Ok(cached);
@@ -186,7 +186,7 @@ impl CertificateAuthority {
         // Cache the result
         {
             let mut cache = self.cache.write()
-                .map_err(|_| AcpError::tls("Failed to acquire cache write lock"))?;
+                .map_err(|_| GapError::tls("Failed to acquire cache write lock"))?;
             cache.insert(hostname.to_string(), cert.clone(), key.clone(), validity);
         }
 
@@ -211,18 +211,18 @@ impl CertificateAuthority {
         for san in sans {
             if let Some(dns_name) = san.strip_prefix("DNS:") {
                 parsed_sans.push(SanType::DnsName(dns_name.to_string().try_into()
-                    .map_err(|e| AcpError::tls(format!("Invalid DNS name '{}': {}", dns_name, e)))?));
+                    .map_err(|e| GapError::tls(format!("Invalid DNS name '{}': {}", dns_name, e)))?));
             } else if let Some(ip_str) = san.strip_prefix("IP:") {
                 let ip_addr = ip_str.parse()
-                    .map_err(|e| AcpError::tls(format!("Invalid IP address '{}': {}", ip_str, e)))?;
+                    .map_err(|e| GapError::tls(format!("Invalid IP address '{}': {}", ip_str, e)))?;
                 parsed_sans.push(SanType::IpAddress(ip_addr));
             } else {
-                return Err(AcpError::tls(format!("Invalid SAN format '{}'. Expected 'DNS:hostname' or 'IP:address'", san)));
+                return Err(GapError::tls(format!("Invalid SAN format '{}'. Expected 'DNS:hostname' or 'IP:address'", san)));
             }
         }
 
         if parsed_sans.is_empty() {
-            return Err(AcpError::tls("At least one SAN is required"));
+            return Err(GapError::tls("At least one SAN is required"));
         }
 
         // Reconstruct CA for signing
@@ -230,7 +230,7 @@ impl CertificateAuthority {
 
         // Generate key pair for the new certificate
         let key_pair = KeyPair::generate()
-            .map_err(|e| AcpError::tls(format!("Failed to generate key pair: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to generate key pair: {}", e)))?;
 
         // Set up certificate parameters with SANs
         let mut params = CertificateParams::default();
@@ -271,7 +271,7 @@ impl CertificateAuthority {
 
         // Sign the certificate with the CA
         let cert = params.signed_by(&key_pair, &ca_cert, &ca_key_pair)
-            .map_err(|e| AcpError::tls(format!("Failed to sign certificate: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to sign certificate: {}", e)))?;
 
         let cert_der = cert.der().to_vec();
         let key_der = key_pair.serialize_der().to_vec();
@@ -288,7 +288,7 @@ impl CertificateAuthority {
 
         // Parse the CA key pair from PEM
         let ca_key_pair = KeyPair::from_pem(&self.ca_key_pem)
-            .map_err(|e| AcpError::tls(format!("Failed to parse CA private key: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to parse CA private key: {}", e)))?;
 
         // Recreate the CA certificate params
         let mut ca_params = CertificateParams::default();
@@ -303,7 +303,7 @@ impl CertificateAuthority {
         ];
 
         let ca_cert = ca_params.self_signed(&ca_key_pair)
-            .map_err(|e| AcpError::tls(format!("Failed to reconstruct CA certificate: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to reconstruct CA certificate: {}", e)))?;
 
         Ok((ca_cert, ca_key_pair))
     }
@@ -318,11 +318,11 @@ impl CertificateAuthority {
 
         // Generate key pair for the new certificate
         let key_pair = KeyPair::generate()
-            .map_err(|e| AcpError::tls(format!("Failed to generate key pair: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to generate key pair: {}", e)))?;
 
         // Set up certificate parameters
         let mut params = CertificateParams::new(vec![hostname.to_string()])
-            .map_err(|e| AcpError::tls(format!("Failed to create certificate params: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to create certificate params: {}", e)))?;
 
         // Set distinguished name
         let mut dn = DistinguishedName::new();
@@ -350,7 +350,7 @@ impl CertificateAuthority {
 
         // Sign the certificate with the CA
         let cert = params.signed_by(&key_pair, &ca_cert, &ca_key_pair)
-            .map_err(|e| AcpError::tls(format!("Failed to sign certificate: {}", e)))?;
+            .map_err(|e| GapError::tls(format!("Failed to sign certificate: {}", e)))?;
 
         let cert_der = cert.der().to_vec();
         let key_der = key_pair.serialize_der().to_vec();
@@ -361,7 +361,7 @@ impl CertificateAuthority {
     /// Clear the certificate cache
     pub fn clear_cache(&self) -> Result<()> {
         let mut cache = self.cache.write()
-            .map_err(|_| AcpError::tls("Failed to acquire cache write lock"))?;
+            .map_err(|_| GapError::tls("Failed to acquire cache write lock"))?;
         cache.clear();
         Ok(())
     }
@@ -375,19 +375,19 @@ fn pem_to_der(pem: &str, label: &str) -> Result<Vec<u8>> {
     let pem = pem.trim();
 
     if !pem.starts_with(&start_marker) || !pem.ends_with(&end_marker) {
-        return Err(AcpError::tls(format!("Invalid PEM format: expected {} markers", label)));
+        return Err(GapError::tls(format!("Invalid PEM format: expected {} markers", label)));
     }
 
     // Extract base64 content between markers
     let content = pem
         .strip_prefix(&start_marker)
         .and_then(|s| s.strip_suffix(&end_marker))
-        .ok_or_else(|| AcpError::tls("Invalid PEM format"))?
+        .ok_or_else(|| GapError::tls("Invalid PEM format"))?
         .trim();
 
     // Decode base64
     base64_decode(content)
-        .map_err(|e| AcpError::tls(format!("Failed to decode PEM base64: {}", e)))
+        .map_err(|e| GapError::tls(format!("Failed to decode PEM base64: {}", e)))
 }
 
 /// Convert DER to PEM format

@@ -2,7 +2,7 @@
 //!
 //! Provides functions to convert between raw HTTP bytes and GAPRequest structs.
 
-use crate::error::{AcpError, Result};
+use crate::error::{GapError, Result};
 use crate::types::GAPRequest;
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ use std::collections::HashMap;
 /// Parsed GAPRequest struct
 pub fn parse_http_request(bytes: &[u8]) -> Result<GAPRequest> {
     let request_str = std::str::from_utf8(bytes)
-        .map_err(|e| AcpError::protocol(format!("Invalid UTF-8 in HTTP request: {}", e)))?;
+        .map_err(|e| GapError::protocol(format!("Invalid UTF-8 in HTTP request: {}", e)))?;
 
     // Split into lines
     let mut lines = request_str.lines();
@@ -26,11 +26,11 @@ pub fn parse_http_request(bytes: &[u8]) -> Result<GAPRequest> {
     // Parse request line: "METHOD /path HTTP/1.1"
     let request_line = lines
         .next()
-        .ok_or_else(|| AcpError::protocol("Empty HTTP request"))?;
+        .ok_or_else(|| GapError::protocol("Empty HTTP request"))?;
 
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 3 {
-        return Err(AcpError::protocol(format!(
+        return Err(GapError::protocol(format!(
             "Invalid HTTP request line: {}",
             request_line
         )));
@@ -63,7 +63,7 @@ pub fn parse_http_request(bytes: &[u8]) -> Result<GAPRequest> {
     // Extract host from headers
     let host = headers
         .get("Host")
-        .ok_or_else(|| AcpError::protocol("Missing Host header"))?
+        .ok_or_else(|| GapError::protocol("Missing Host header"))?
         .clone();
 
     // Construct full URL (assume HTTPS since we're a MITM proxy)

@@ -1,10 +1,10 @@
-//! Integration tests for the ACP system
+//! Integration tests for the GAP system
 //!
 //! Tests the full pipeline: FileStore -> PluginRuntime -> Transform execution
 
 use gap_lib::plugin_runtime::PluginRuntime;
 use gap_lib::storage::{FileStore, SecretStore};
-use gap_lib::types::{ACPCredentials, ACPRequest};
+use gap_lib::types::{GAPCredentials, GAPRequest};
 
 /// Integration test: Load test-api plugin and execute a transform
 ///
@@ -19,7 +19,7 @@ use gap_lib::types::{ACPCredentials, ACPRequest};
 async fn test_full_plugin_pipeline() {
     // Create a temporary directory for the test store
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_integration_test_{}",
+        "gap_integration_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -60,11 +60,11 @@ async fn test_full_plugin_pipeline() {
     assert!(!plugin.matches_host("other.example.com"));
 
     // Create a test request
-    let request = ACPRequest::new("GET", "https://api.example.com/v1/users")
+    let request = GAPRequest::new("GET", "https://api.example.com/v1/users")
         .with_header("Content-Type", "application/json");
 
     // Create credentials
-    let mut credentials = ACPCredentials::new();
+    let mut credentials = GAPCredentials::new();
     credentials.set("api_key", "test_secret_key_12345");
 
     // Execute the transform
@@ -92,7 +92,7 @@ async fn test_full_plugin_pipeline() {
 #[tokio::test]
 async fn test_multiple_plugins() {
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_multi_plugin_test_{}",
+        "gap_multi_plugin_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -150,8 +150,8 @@ async fn test_multiple_plugins() {
     // Execute transform for the last loaded plugin (plugin B)
     // Note: Loading plugin B overwrites the global `plugin` object in the JS context,
     // so we can only execute the most recently loaded plugin's transform.
-    let request_b = ACPRequest::new("POST", "https://service-b.example.com/api");
-    let mut creds_b = ACPCredentials::new();
+    let request_b = GAPRequest::new("POST", "https://service-b.example.com/api");
+    let mut creds_b = GAPCredentials::new();
     creds_b.set("api_key", "key_456");
     creds_b.set("secret", "secret_789");
 
@@ -177,7 +177,7 @@ async fn test_multiple_plugins() {
 #[tokio::test]
 async fn test_plugin_with_multiple_credentials() {
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_multi_cred_test_{}",
+        "gap_multi_cred_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -221,8 +221,8 @@ async fn test_plugin_with_multiple_credentials() {
     assert!(!plugin.matches_host("s3.amazonaws.com")); // No subdomain
     assert!(!plugin.matches_host("a.b.s3.amazonaws.com")); // Multiple subdomains
 
-    let request = ACPRequest::new("GET", "https://my-bucket.s3.amazonaws.com/object");
-    let mut creds = ACPCredentials::new();
+    let request = GAPRequest::new("GET", "https://my-bucket.s3.amazonaws.com/object");
+    let mut creds = GAPCredentials::new();
     creds.set("access_key_id", "AKIAIOSFODNN7EXAMPLE");
     creds.set("secret_access_key", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY");
     creds.set("region", "us-west-2");

@@ -15,7 +15,7 @@ pub mod storage;
 pub mod tls;
 pub mod types;
 
-pub use error::{AcpError, Result};
+pub use error::{GapError, Result};
 pub use http_utils::{parse_http_request, serialize_http_request};
 pub use plugin_matcher::find_matching_plugin;
 pub use plugin_runtime::PluginRuntime;

@@ -288,7 +288,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_acp_request_creation() {
+    fn test_gap_request_creation() {
         let req = GAPRequest::new("GET", "https://api.example.com/users")
             .with_header("Authorization", "Bearer token")
             .with_body(b"test body".to_vec());
@@ -300,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn test_acp_request_serialization() {
+    fn test_gap_request_serialization() {
         let req = GAPRequest::new("POST", "https://api.example.com/data")
             .with_header("Content-Type", "application/json")
             .with_body(b"{\"test\":true}".to_vec());

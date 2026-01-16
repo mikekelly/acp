@@ -1,4 +1,4 @@
-//! End-to-End Integration Tests for ACP System
+//! End-to-End Integration Tests for GAP System
 //!
 //! Tests the complete lifecycle flows:
 //! 1. Server initialization (init → server starts)
@@ -40,7 +40,7 @@ impl TestServer {
         std::env::set_var("HOME", temp_dir.path());
 
         // Find the server binary in the workspace target directory
-        let server_binary = std::env::var("CARGO_BIN_EXE_acp-server")
+        let server_binary = std::env::var("CARGO_BIN_EXE_gap-server")
             .unwrap_or_else(|_| {
                 // Fallback: construct path relative to workspace root
                 let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -48,7 +48,7 @@ impl TestServer {
                 workspace_root
                     .join("target")
                     .join("debug")
-                    .join("acp-server")
+                    .join("gap-server")
                     .to_str()
                     .unwrap()
                     .to_string()

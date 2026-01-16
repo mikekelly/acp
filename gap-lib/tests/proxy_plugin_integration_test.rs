@@ -10,12 +10,12 @@
 use gap_lib::plugin_runtime::PluginRuntime;
 use gap_lib::registry::{PluginEntry, Registry};
 use gap_lib::storage::{FileStore, SecretStore};
-use gap_lib::types::{ACPCredentials, ACPRequest};
+use gap_lib::types::{GAPCredentials, GAPRequest};
 use std::sync::Arc;
 
 /// Test HTTP request parsing
 ///
-/// This test verifies we can parse a raw HTTP request into an ACPRequest struct
+/// This test verifies we can parse a raw HTTP request into an GAPRequest struct
 #[test]
 fn test_parse_http_request() {
     let raw_request = b"GET /v1/users HTTP/1.1\r\nHost: api.example.com\r\nContent-Type: application/json\r\n\r\n";
@@ -41,10 +41,10 @@ fn test_parse_http_request_with_body() {
     assert_eq!(request.body, b"{\"test\":true}");
 }
 
-/// Test serializing ACPRequest back to HTTP
+/// Test serializing GAPRequest back to HTTP
 #[test]
 fn test_serialize_http_request() {
-    let request = ACPRequest::new("GET", "https://api.example.com/v1/users")
+    let request = GAPRequest::new("GET", "https://api.example.com/v1/users")
         .with_header("Host", "api.example.com")
         .with_header("Content-Type", "application/json");
 
@@ -57,10 +57,10 @@ fn test_serialize_http_request() {
     assert!(http_str.ends_with("\r\n\r\n"));
 }
 
-/// Test serializing ACPRequest with body
+/// Test serializing GAPRequest with body
 #[test]
 fn test_serialize_http_request_with_body() {
-    let request = ACPRequest::new("POST", "https://api.example.com/v1/data")
+    let request = GAPRequest::new("POST", "https://api.example.com/v1/data")
         .with_header("Host", "api.example.com")
         .with_header("Content-Type", "application/json")
         .with_body(b"{\"test\":true}".to_vec());
@@ -78,7 +78,7 @@ fn test_serialize_http_request_with_body() {
 #[tokio::test]
 async fn test_find_matching_plugin() {
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_proxy_test_{}",
+        "gap_proxy_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -153,7 +153,7 @@ async fn test_find_matching_plugin() {
 #[tokio::test]
 async fn test_proxy_plugin_execution_flow() {
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_proxy_e2e_test_{}",
+        "gap_proxy_e2e_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -188,7 +188,7 @@ async fn test_proxy_plugin_execution_flow() {
     }).await.unwrap();
 
     // Store credentials
-    let mut creds = ACPCredentials::new();
+    let mut creds = GAPCredentials::new();
     creds.set("api_key", "secret123");
     store.set("credential:test-api:default", serde_json::to_string(&creds).unwrap().as_bytes()).await.unwrap();
 
@@ -204,7 +204,7 @@ async fn test_proxy_plugin_execution_flow() {
     // Load credentials for the plugin
     let creds_key = format!("credential:{}:default", plugin.name);
     let creds_bytes = store.get(&creds_key).await.unwrap().unwrap();
-    let creds: ACPCredentials = serde_json::from_slice(&creds_bytes).unwrap();
+    let creds: GAPCredentials = serde_json::from_slice(&creds_bytes).unwrap();
 
     // Execute transform
     let mut runtime = PluginRuntime::new().unwrap();
@@ -231,7 +231,7 @@ use gap_lib::proxy_transforms::parse_and_transform;
 #[tokio::test]
 async fn test_complete_proxy_transform_pipeline() {
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_proxy_complete_test_{}",
+        "gap_proxy_complete_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

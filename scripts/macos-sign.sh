@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sign ACP binaries for macOS Keychain access
+# Sign GAP binaries for macOS Keychain access
 # Default: Uses a self-signed certificate for local development
 # Production: Uses Developer ID with hardened runtime (--production flag)
 
@@ -12,10 +12,10 @@ if [[ "$1" == "--production" ]]; then
 fi
 
 # Certificate names
-DEV_CERT_NAME="ACP Development"
+DEV_CERT_NAME="GAP Development"
 PROD_CERT_NAME="Developer ID Application"
-KEYCHAIN_NAME="acp-signing.keychain"
-KEYCHAIN_PASSWORD="acp-build"
+KEYCHAIN_NAME="gap-signing.keychain"
+KEYCHAIN_PASSWORD="gap-build"
 
 # Colors
 RED='\033[0;31m'
@@ -74,7 +74,7 @@ distinguished_name = req_dn
 prompt = no
 [req_dn]
 CN = $CERT_NAME
-O = ACP Development
+O = GAP Development
 [codesign]
 keyUsage = critical, digitalSignature
 extendedKeyUsage = critical, codeSigning
@@ -148,13 +148,13 @@ ENTITLEMENTS
         --entitlements "$ENTITLEMENTS_FILE" \
         target/release/gap-server
 
-    log_info "Signing acp..."
+    log_info "Signing gap..."
     codesign --sign "$CERT_NAME" \
         --force \
         --options runtime \
         --timestamp \
         --entitlements "$ENTITLEMENTS_FILE" \
-        target/release/acp
+        target/release/gap
 
     rm -f "$ENTITLEMENTS_FILE"
 else
@@ -169,17 +169,17 @@ else
         --timestamp=none \
         target/release/gap-server
 
-    log_info "Signing acp..."
+    log_info "Signing gap..."
     codesign --sign "$CERT_NAME" \
         --force \
         --timestamp=none \
-        target/release/acp
+        target/release/gap
 fi
 
 # Verify signatures
 log_info "Verifying signatures..."
 codesign --verify --verbose target/release/gap-server
-codesign --verify --verbose target/release/acp
+codesign --verify --verbose target/release/gap
 
 # Enhanced verification for production builds
 if [[ "$PRODUCTION_MODE" == true ]]; then
@@ -191,7 +191,7 @@ if [[ "$PRODUCTION_MODE" == true ]]; then
 
     echo ""
     log_info "gap signature details:"
-    codesign --display --verbose=4 target/release/acp
+    codesign --display --verbose=4 target/release/gap
 
     # Verify hardened runtime is enabled
     echo ""
@@ -203,7 +203,7 @@ if [[ "$PRODUCTION_MODE" == true ]]; then
         exit 1
     fi
 
-    if codesign --display --verbose target/release/acp 2>&1 | grep -q "runtime"; then
+    if codesign --display --verbose target/release/gap 2>&1 | grep -q "runtime"; then
         log_info "✓ Hardened runtime enabled on gap"
     else
         log_error "✗ Hardened runtime NOT enabled on gap"
@@ -231,7 +231,7 @@ else
     echo "Development build signed with self-signed certificate."
     echo ""
     echo "Next steps:"
-    echo "  1. Run: ./target/release/gap-server --data-dir /tmp/acp-test"
+    echo "  1. Run: ./target/release/gap-server --data-dir /tmp/gap-test"
     echo "  2. If blocked by Gatekeeper:"
     echo "     - Go to System Settings → Privacy & Security"
     echo "     - Click 'Open Anyway' next to the blocked app message"

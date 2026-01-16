@@ -261,7 +261,7 @@ pub async fn create_store(data_dir: Option<PathBuf>) -> Result<Box<dyn SecretSto
                 // Use default location: ~/.gap/secrets
                 let home = std::env::var("HOME")
                     .or_else(|_| std::env::var("USERPROFILE"))
-                    .map_err(|_| crate::AcpError::storage("Cannot determine home directory"))?;
+                    .map_err(|_| crate::GapError::storage("Cannot determine home directory"))?;
                 let path = PathBuf::from(home).join(".gap").join("secrets");
                 let store = FileStore::new(path).await?;
                 Ok(Box::new(store))

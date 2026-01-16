@@ -2,7 +2,7 @@
 //!
 //! Handles HTTP parsing and plugin transform execution for the proxy.
 
-use crate::error::{AcpError, Result};
+use crate::error::{GapError, Result};
 use crate::http_utils::{parse_http_request, serialize_http_request};
 use crate::plugin_matcher::find_matching_plugin;
 use crate::plugin_runtime::PluginRuntime;
@@ -78,9 +78,9 @@ pub async fn parse_and_transform<S: SecretStore + ?Sized>(
     // Load plugin code from storage
     let plugin_key = format!("plugin:{}", plugin.name);
     let plugin_code_bytes = store.get(&plugin_key).await?
-        .ok_or_else(|| AcpError::plugin(format!("Plugin code not found for {}", plugin.name)))?;
+        .ok_or_else(|| GapError::plugin(format!("Plugin code not found for {}", plugin.name)))?;
     let plugin_code = String::from_utf8(plugin_code_bytes)
-        .map_err(|e| AcpError::plugin(format!("Invalid UTF-8 in plugin code: {}", e)))?;
+        .map_err(|e| GapError::plugin(format!("Invalid UTF-8 in plugin code: {}", e)))?;
 
     // Execute transform
     // CRITICAL: Scope the PluginRuntime to ensure it's dropped before any await

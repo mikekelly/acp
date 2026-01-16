@@ -2,14 +2,14 @@
 //!
 //! Provides a sandboxed JavaScript environment for executing plugin transforms.
 //! Implements:
-//! - ACP.crypto globals (sha256, sha256Hex, hmac)
-//! - ACP.util globals (base64, hex, now, isoDate, amzDate)
+//! - GAP.crypto globals (sha256, sha256Hex, hmac)
+//! - GAP.util globals (base64, hex, now, isoDate, amzDate)
 //! - TextEncoder/TextDecoder
 //! - Sandbox restrictions (no fetch, eval, etc.)
 
 use crate::storage::SecretStore;
 use crate::types::{GAPCredentials, GAPPlugin, GAPRequest};
-use crate::{AcpError, Result};
+use crate::{GapError, Result};
 use base64::Engine;
 use boa_engine::{Context, JsArgs, JsNativeError, JsResult, JsString, JsValue, NativeFunction, Source};
 use chrono::Utc;
@@ -29,8 +29,8 @@ impl PluginRuntime {
     pub fn new() -> Result<Self> {
         let mut context = Context::default();
 
-        // Set up ACP global object (including log functionality)
-        Self::setup_acp_globals(&mut context)?;
+        // Set up GAP global object (including log functionality)
+        Self::setup_gap_globals(&mut context)?;
 
         // Set up TextEncoder/TextDecoder
         Self::setup_text_encoding(&mut context)?;
@@ -51,19 +51,19 @@ impl PluginRuntime {
     pub fn execute(&mut self, code: &str) -> Result<JsValue> {
         self.context
             .eval(Source::from_bytes(code))
-            .map_err(|e| AcpError::plugin(format!("JavaScript execution error: {}", e)))
+            .map_err(|e| GapError::plugin(format!("JavaScript execution error: {}", e)))
     }
 
-    /// Set up ACP.crypto and ACP.util global objects
-    fn setup_acp_globals(context: &mut Context) -> Result<()> {
+    /// Set up GAP.crypto and GAP.util global objects
+    fn setup_gap_globals(context: &mut Context) -> Result<()> {
         // Register native functions first
         Self::register_crypto_natives(context)?;
         Self::register_util_natives(context)?;
         Self::register_log_native(context)?;
 
-        // Create ACP namespace with crypto, util, and log methods
+        // Create GAP namespace with crypto, util, and log methods
         let setup_code = r#"
-        var ACP = {
+        var GAP = {
             crypto: {
                 sha256: function(data) {
                     return __gap_native_sha256(data);
@@ -105,7 +105,7 @@ impl PluginRuntime {
         "#;
 
         context.eval(Source::from_bytes(setup_code))
-            .map_err(|e| AcpError::plugin(format!("Failed to create ACP namespace: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to create GAP namespace: {}", e)))?;
 
         Ok(())
     }
@@ -127,7 +127,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_sha256"),
             1,
             sha256_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register sha256: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register sha256: {}", e)))?;
 
         // sha256Hex - returns hex string
         let sha256_hex_fn = NativeFunction::from_fn_ptr(|_, args, context| {
@@ -144,7 +144,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_sha256_hex"),
             1,
             sha256_hex_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register sha256Hex: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register sha256Hex: {}", e)))?;
 
         // hmac - returns encoded string
         let hmac_fn = NativeFunction::from_fn_ptr(|_, args, context| {
@@ -175,7 +175,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_hmac"),
             3,
             hmac_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register hmac: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register hmac: {}", e)))?;
 
         Ok(())
     }
@@ -194,7 +194,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_base64_encode"),
             1,
             base64_encode_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register base64 encode: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register base64 encode: {}", e)))?;
 
         // base64 decode
         let base64_decode_fn = NativeFunction::from_fn_ptr(|_, args, context| {
@@ -216,7 +216,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_base64_decode"),
             1,
             base64_decode_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register base64 decode: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register base64 decode: {}", e)))?;
 
         // hex encode
         let hex_encode_fn = NativeFunction::from_fn_ptr(|_, args, context| {
@@ -228,7 +228,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_hex_encode"),
             1,
             hex_encode_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register hex encode: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register hex encode: {}", e)))?;
 
         // hex decode
         let hex_decode_fn = NativeFunction::from_fn_ptr(|_, args, context| {
@@ -250,7 +250,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_hex_decode"),
             1,
             hex_decode_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register hex decode: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register hex decode: {}", e)))?;
 
         // now - returns current timestamp in milliseconds
         let now_fn = NativeFunction::from_fn_ptr(|_, _, _| {
@@ -261,7 +261,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_now"),
             0,
             now_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register now: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register now: {}", e)))?;
 
         // isoDate - formats timestamp as ISO 8601 date string
         let iso_date_fn = NativeFunction::from_fn_ptr(|_, args, _| {
@@ -278,7 +278,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_iso_date"),
             1,
             iso_date_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register isoDate: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register isoDate: {}", e)))?;
 
         // amzDate - formats timestamp as AWS date string (YYYYMMDD'T'HHMMSS'Z')
         let amz_date_fn = NativeFunction::from_fn_ptr(|_, args, _| {
@@ -295,12 +295,12 @@ impl PluginRuntime {
             JsString::from("__gap_native_amz_date"),
             1,
             amz_date_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register amzDate: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register amzDate: {}", e)))?;
 
         Ok(())
     }
 
-    /// Register native log function for ACP.log
+    /// Register native log function for GAP.log
     fn register_log_native(context: &mut Context) -> Result<()> {
         // Create a JavaScript array to store logs
         let setup_log_code = r#"
@@ -331,7 +331,7 @@ impl PluginRuntime {
         "#;
 
         context.eval(Source::from_bytes(setup_log_code))
-            .map_err(|e| AcpError::plugin(format!("Failed to create log function: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to create log function: {}", e)))?;
 
         Ok(())
     }
@@ -389,7 +389,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_text_encode"),
             1,
             encode_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register text encode: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register text encode: {}", e)))?;
 
         let decode_fn = NativeFunction::from_fn_ptr(|_, args, context| {
             let data = args.get_or_undefined(0);
@@ -404,7 +404,7 @@ impl PluginRuntime {
             JsString::from("__gap_native_text_decode"),
             1,
             decode_fn
-        ).map_err(|e| AcpError::plugin(format!("Failed to register text decode: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Failed to register text decode: {}", e)))?;
 
         // Create TextEncoder and TextDecoder classes
         let text_code = r#"
@@ -419,7 +419,7 @@ impl PluginRuntime {
         };
         "#;
         context.eval(Source::from_bytes(text_code))
-            .map_err(|e| AcpError::plugin(format!("Failed to create TextEncoder/TextDecoder: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to create TextEncoder/TextDecoder: {}", e)))?;
 
         Ok(())
     }
@@ -506,7 +506,7 @@ impl PluginRuntime {
         "#;
 
         context.eval(Source::from_bytes(url_code))
-            .map_err(|e| AcpError::plugin(format!("Failed to create URL/URLSearchParams: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to create URL/URLSearchParams: {}", e)))?;
 
         Ok(())
     }
@@ -540,7 +540,7 @@ impl PluginRuntime {
         "#;
 
         context.eval(Source::from_bytes(sandbox_code))
-            .map_err(|e| AcpError::plugin(format!("Failed to apply sandbox: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to apply sandbox: {}", e)))?;
 
         Ok(())
     }
@@ -583,10 +583,10 @@ impl PluginRuntime {
         // Retrieve plugin code from store
         let key = format!("plugin:{}", name);
         let code = store.get(&key).await?
-            .ok_or_else(|| AcpError::plugin(format!("Plugin '{}' not found in store", name)))?;
+            .ok_or_else(|| GapError::plugin(format!("Plugin '{}' not found in store", name)))?;
 
         let code_str = String::from_utf8(code)
-            .map_err(|e| AcpError::plugin(format!("Plugin code is not valid UTF-8: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Plugin code is not valid UTF-8: {}", e)))?;
 
         // Use the common code loading logic
         self.load_plugin_from_code(name, &code_str)
@@ -599,7 +599,7 @@ impl PluginRuntime {
     /// NOT by the internal `name` field in the plugin code.
     ///
     /// # Arguments
-    /// * `canonical_name` - The canonical plugin identifier (e.g., "mikekelly/exa-acp")
+    /// * `canonical_name` - The canonical plugin identifier (e.g., "mikekelly/exa-gap")
     ///
     /// # Returns
     /// GAPPlugin with extracted metadata
@@ -608,16 +608,16 @@ impl PluginRuntime {
         let global = self.context.global_object();
         let plugin_key = JsString::from("plugin");
         let plugin_obj = global.get(plugin_key, &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get plugin object: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get plugin object: {}", e)))?;
 
         let plugin_obj = plugin_obj.as_object()
-            .ok_or_else(|| AcpError::plugin("plugin is not an object"))?;
+            .ok_or_else(|| GapError::plugin("plugin is not an object"))?;
 
         // Verify the internal name field exists (for validation, but we don't use it)
         let name_value = plugin_obj.get(JsString::from("name"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.name: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get plugin.name: {}", e)))?;
         let _internal_name = name_value.as_string()
-            .ok_or_else(|| AcpError::plugin("plugin.name is not a string"))?
+            .ok_or_else(|| GapError::plugin("plugin.name is not a string"))?
             .to_std_string_escaped();
 
         // Use the canonical name (e.g., GitHub path) as the plugin identifier
@@ -625,21 +625,21 @@ impl PluginRuntime {
 
         // Extract matchPatterns (array of strings)
         let patterns_value = plugin_obj.get(JsString::from("matchPatterns"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.matchPatterns: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get plugin.matchPatterns: {}", e)))?;
         let patterns_obj = patterns_value.as_object()
-            .ok_or_else(|| AcpError::plugin("plugin.matchPatterns is not an array"))?;
+            .ok_or_else(|| GapError::plugin("plugin.matchPatterns is not an array"))?;
 
         let mut match_patterns = Vec::new();
         let length_value = patterns_obj.get(JsString::from("length"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get matchPatterns.length: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get matchPatterns.length: {}", e)))?;
         let length = length_value.as_number()
-            .ok_or_else(|| AcpError::plugin("matchPatterns.length is not a number"))? as usize;
+            .ok_or_else(|| GapError::plugin("matchPatterns.length is not a number"))? as usize;
 
         for i in 0..length {
             let elem = patterns_obj.get(i, &mut self.context)
-                .map_err(|e| AcpError::plugin(format!("Failed to get matchPatterns[{}]: {}", i, e)))?;
+                .map_err(|e| GapError::plugin(format!("Failed to get matchPatterns[{}]: {}", i, e)))?;
             let pattern = elem.as_string()
-                .ok_or_else(|| AcpError::plugin(format!("matchPatterns[{}] is not a string", i)))?
+                .ok_or_else(|| GapError::plugin(format!("matchPatterns[{}] is not a string", i)))?
                 .to_std_string_escaped();
             match_patterns.push(pattern);
         }
@@ -648,9 +648,9 @@ impl PluginRuntime {
         // 1. Simple format: ["api_key", "secret"]
         // 2. Rich format: { fields: [{ name: "apiKey", ... }, ...] }
         let schema_value = plugin_obj.get(JsString::from("credentialSchema"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.credentialSchema: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get plugin.credentialSchema: {}", e)))?;
         let schema_obj = schema_value.as_object()
-            .ok_or_else(|| AcpError::plugin("plugin.credentialSchema is not an object or array"))?;
+            .ok_or_else(|| GapError::plugin("plugin.credentialSchema is not an object or array"))?;
 
         let mut credential_schema = Vec::new();
 
@@ -662,39 +662,39 @@ impl PluginRuntime {
             // Rich format: { fields: [{ name: "apiKey", ... }, ...] }
             let fields_value = fields_value.unwrap();
             let fields_obj = fields_value.as_object()
-                .ok_or_else(|| AcpError::plugin("credentialSchema.fields is not an array"))?;
+                .ok_or_else(|| GapError::plugin("credentialSchema.fields is not an array"))?;
 
             let fields_length_value = fields_obj.get(JsString::from("length"), &mut self.context)
-                .map_err(|e| AcpError::plugin(format!("Failed to get credentialSchema.fields.length: {}", e)))?;
+                .map_err(|e| GapError::plugin(format!("Failed to get credentialSchema.fields.length: {}", e)))?;
             let fields_length = fields_length_value.as_number()
-                .ok_or_else(|| AcpError::plugin("credentialSchema.fields.length is not a number"))? as usize;
+                .ok_or_else(|| GapError::plugin("credentialSchema.fields.length is not a number"))? as usize;
 
             for i in 0..fields_length {
                 let field_obj = fields_obj.get(i, &mut self.context)
-                    .map_err(|e| AcpError::plugin(format!("Failed to get credentialSchema.fields[{}]: {}", i, e)))?;
+                    .map_err(|e| GapError::plugin(format!("Failed to get credentialSchema.fields[{}]: {}", i, e)))?;
                 let field_obj = field_obj.as_object()
-                    .ok_or_else(|| AcpError::plugin(format!("credentialSchema.fields[{}] is not an object", i)))?;
+                    .ok_or_else(|| GapError::plugin(format!("credentialSchema.fields[{}] is not an object", i)))?;
 
                 // Extract the "name" field
                 let name_value = field_obj.get(JsString::from("name"), &mut self.context)
-                    .map_err(|e| AcpError::plugin(format!("Failed to get credentialSchema.fields[{}].name: {}", i, e)))?;
+                    .map_err(|e| GapError::plugin(format!("Failed to get credentialSchema.fields[{}].name: {}", i, e)))?;
                 let name = name_value.as_string()
-                    .ok_or_else(|| AcpError::plugin(format!("credentialSchema.fields[{}].name is not a string", i)))?
+                    .ok_or_else(|| GapError::plugin(format!("credentialSchema.fields[{}].name is not a string", i)))?
                     .to_std_string_escaped();
                 credential_schema.push(name);
             }
         } else {
             // Simple format: ["api_key", "secret"]
             let schema_length_value = schema_obj.get(JsString::from("length"), &mut self.context)
-                .map_err(|e| AcpError::plugin(format!("Failed to get credentialSchema.length: {}", e)))?;
+                .map_err(|e| GapError::plugin(format!("Failed to get credentialSchema.length: {}", e)))?;
             let schema_length = schema_length_value.as_number()
-                .ok_or_else(|| AcpError::plugin("credentialSchema.length is not a number"))? as usize;
+                .ok_or_else(|| GapError::plugin("credentialSchema.length is not a number"))? as usize;
 
             for i in 0..schema_length {
                 let elem = schema_obj.get(i, &mut self.context)
-                    .map_err(|e| AcpError::plugin(format!("Failed to get credentialSchema[{}]: {}", i, e)))?;
+                    .map_err(|e| GapError::plugin(format!("Failed to get credentialSchema[{}]: {}", i, e)))?;
                 let key = elem.as_string()
-                    .ok_or_else(|| AcpError::plugin(format!("credentialSchema[{}] is not a string", i)))?
+                    .ok_or_else(|| GapError::plugin(format!("credentialSchema[{}] is not a string", i)))?
                     .to_std_string_escaped();
                 credential_schema.push(key);
             }
@@ -702,9 +702,9 @@ impl PluginRuntime {
 
         // Verify transform function exists
         let transform_value = plugin_obj.get(JsString::from("transform"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.transform: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get plugin.transform: {}", e)))?;
         let _transform_fn = transform_value.as_callable()
-            .ok_or_else(|| AcpError::plugin("plugin.transform is not a function"))?;
+            .ok_or_else(|| GapError::plugin("plugin.transform is not a function"))?;
 
         // For the transform field, we store a placeholder since the actual function
         // is in the JS context and will be called directly
@@ -735,7 +735,7 @@ impl PluginRuntime {
     ) -> Result<GAPRequest> {
         // Get the plugin
         let _plugin = self.plugins.get(plugin_name)
-            .ok_or_else(|| AcpError::plugin(format!("Plugin '{}' not loaded", plugin_name)))?;
+            .ok_or_else(|| GapError::plugin(format!("Plugin '{}' not loaded", plugin_name)))?;
 
         // Convert request to JS object
         let request_js = self.request_to_js(&request)?;
@@ -746,21 +746,21 @@ impl PluginRuntime {
         // Get the plugin.transform function
         let global = self.context.global_object();
         let plugin_obj = global.get(JsString::from("plugin"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get plugin object: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get plugin object: {}", e)))?;
         let plugin_obj = plugin_obj.as_object()
-            .ok_or_else(|| AcpError::plugin("plugin is not an object"))?;
+            .ok_or_else(|| GapError::plugin("plugin is not an object"))?;
 
         let transform_value = plugin_obj.get(JsString::from("transform"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get plugin.transform: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get plugin.transform: {}", e)))?;
         let transform_fn = transform_value.as_callable()
-            .ok_or_else(|| AcpError::plugin("plugin.transform is not a function"))?;
+            .ok_or_else(|| GapError::plugin("plugin.transform is not a function"))?;
 
         // Call transform(request, credentials)
         let result = transform_fn.call(
             &JsValue::undefined(),
             &[request_js, credentials_js],
             &mut self.context
-        ).map_err(|e| AcpError::plugin(format!("Transform execution error: {}", e)))?;
+        ).map_err(|e| GapError::plugin(format!("Transform execution error: {}", e)))?;
 
         // Convert result back to GAPRequest
         self.js_to_request(&result)
@@ -795,7 +795,7 @@ impl PluginRuntime {
 
         // Check if we exceeded the timeout
         if start.elapsed() > timeout {
-            return Err(AcpError::plugin(format!(
+            return Err(GapError::plugin(format!(
                 "Plugin execution timeout exceeded: {:?} > {:?}",
                 start.elapsed(),
                 timeout
@@ -822,16 +822,16 @@ impl PluginRuntime {
         );
 
         let obj = self.context.eval(Source::from_bytes(&code))
-            .map_err(|e| AcpError::plugin(format!("Failed to create request object: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to create request object: {}", e)))?;
 
         let obj_ref = obj.as_object()
-            .ok_or_else(|| AcpError::plugin("Failed to create request object"))?;
+            .ok_or_else(|| GapError::plugin("Failed to create request object"))?;
 
         // Set headers
         let headers_obj = obj_ref.get(JsString::from("headers"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get headers object: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get headers object: {}", e)))?;
         let headers_obj = headers_obj.as_object()
-            .ok_or_else(|| AcpError::plugin("headers is not an object"))?;
+            .ok_or_else(|| GapError::plugin("headers is not an object"))?;
 
         for (key, value) in &request.headers {
             headers_obj.set(
@@ -839,15 +839,15 @@ impl PluginRuntime {
                 JsValue::from(JsString::from(value.as_str())),
                 false,
                 &mut self.context
-            ).map_err(|e| AcpError::plugin(format!("Failed to set header '{}': {}", key, e)))?;
+            ).map_err(|e| GapError::plugin(format!("Failed to set header '{}': {}", key, e)))?;
         }
 
         // Set body as byte array
         let body_array = bytes_to_js_array(&request.body, &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to convert body to array: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to convert body to array: {}", e)))?;
 
         obj_ref.set(JsString::from("body"), body_array, false, &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to set body: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to set body: {}", e)))?;
 
         Ok(obj)
     }
@@ -856,10 +856,10 @@ impl PluginRuntime {
     fn credentials_to_js(&mut self, credentials: &GAPCredentials) -> Result<JsValue> {
         // Create empty object
         let obj = self.context.eval(Source::from_bytes("({})"))
-            .map_err(|e| AcpError::plugin(format!("Failed to create credentials object: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to create credentials object: {}", e)))?;
 
         let obj_ref = obj.as_object()
-            .ok_or_else(|| AcpError::plugin("Failed to create credentials object"))?;
+            .ok_or_else(|| GapError::plugin("Failed to create credentials object"))?;
 
         // Set each credential
         for (key, value) in &credentials.credentials {
@@ -868,7 +868,7 @@ impl PluginRuntime {
                 JsValue::from(JsString::from(value.as_str())),
                 false,
                 &mut self.context
-            ).map_err(|e| AcpError::plugin(format!("Failed to set credential '{}': {}", key, e)))?;
+            ).map_err(|e| GapError::plugin(format!("Failed to set credential '{}': {}", key, e)))?;
         }
 
         Ok(obj)
@@ -877,38 +877,38 @@ impl PluginRuntime {
     /// Convert JavaScript object to GAPRequest
     fn js_to_request(&mut self, value: &JsValue) -> Result<GAPRequest> {
         let obj = value.as_object()
-            .ok_or_else(|| AcpError::plugin("Transform result is not an object"))?;
+            .ok_or_else(|| GapError::plugin("Transform result is not an object"))?;
 
         // Extract method
         let method_value = obj.get(JsString::from("method"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get result.method: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get result.method: {}", e)))?;
         let method = method_value.as_string()
-            .ok_or_else(|| AcpError::plugin("result.method is not a string"))?
+            .ok_or_else(|| GapError::plugin("result.method is not a string"))?
             .to_std_string_escaped();
 
         // Extract url
         let url_value = obj.get(JsString::from("url"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get result.url: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get result.url: {}", e)))?;
         let url = url_value.as_string()
-            .ok_or_else(|| AcpError::plugin("result.url is not a string"))?
+            .ok_or_else(|| GapError::plugin("result.url is not a string"))?
             .to_std_string_escaped();
 
         // Extract headers
         let headers_value = obj.get(JsString::from("headers"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get result.headers: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get result.headers: {}", e)))?;
         let headers_obj = headers_value.as_object()
-            .ok_or_else(|| AcpError::plugin("result.headers is not an object"))?;
+            .ok_or_else(|| GapError::plugin("result.headers is not an object"))?;
 
         let mut headers = HashMap::new();
 
         // Iterate over header properties
         let props = headers_obj.own_property_keys(&mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get header keys: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get header keys: {}", e)))?;
 
         for prop_key in props {
             // Get the string representation of the key
             let key_value = headers_obj.get(prop_key.clone(), &mut self.context)
-                .map_err(|e| AcpError::plugin(format!("Failed to get header value: {}", e)))?;
+                .map_err(|e| GapError::plugin(format!("Failed to get header value: {}", e)))?;
 
             // Convert the PropertyKey to string - use the key directly as it should be a string
             let key = match &prop_key {
@@ -917,7 +917,7 @@ impl PluginRuntime {
             };
 
             let value = key_value.as_string()
-                .ok_or_else(|| AcpError::plugin(format!("Header '{}' is not a string", key)))?
+                .ok_or_else(|| GapError::plugin(format!("Header '{}' is not a string", key)))?
                 .to_std_string_escaped();
 
             headers.insert(key, value);
@@ -925,9 +925,9 @@ impl PluginRuntime {
 
         // Extract body
         let body_value = obj.get(JsString::from("body"), &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to get result.body: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to get result.body: {}", e)))?;
         let body = js_value_to_bytes(&body_value, &mut self.context)
-            .map_err(|e| AcpError::plugin(format!("Failed to convert body: {}", e)))?;
+            .map_err(|e| GapError::plugin(format!("Failed to convert body: {}", e)))?;
 
         Ok(GAPRequest {
             method,
@@ -1008,16 +1008,16 @@ mod tests {
     }
 
     #[test]
-    fn test_acp_crypto_sha256_hex_exists() {
+    fn test_gap_crypto_sha256_hex_exists() {
         let mut runtime = PluginRuntime::new().unwrap();
-        let result = runtime.execute("typeof ACP.crypto.sha256Hex").unwrap();
+        let result = runtime.execute("typeof GAP.crypto.sha256Hex").unwrap();
         assert_eq!(result.as_string().unwrap().to_std_string_escaped(), "function");
     }
 
     #[test]
-    fn test_acp_crypto_sha256_hex() {
+    fn test_gap_crypto_sha256_hex() {
         let mut runtime = PluginRuntime::new().unwrap();
-        let result = runtime.execute("ACP.crypto.sha256Hex('hello')").unwrap();
+        let result = runtime.execute("GAP.crypto.sha256Hex('hello')").unwrap();
         let hash = result.as_string().unwrap().to_std_string_escaped();
 
         // Expected SHA-256 of "hello"
@@ -1025,9 +1025,9 @@ mod tests {
     }
 
     #[test]
-    fn test_acp_crypto_hmac() {
+    fn test_gap_crypto_hmac() {
         let mut runtime = PluginRuntime::new().unwrap();
-        let result = runtime.execute("ACP.crypto.hmac('key', 'message', 'hex')").unwrap();
+        let result = runtime.execute("GAP.crypto.hmac('key', 'message', 'hex')").unwrap();
         let hmac = result.as_string().unwrap().to_std_string_escaped();
 
         // Expected HMAC-SHA256 of "message" with key "key"
@@ -1035,25 +1035,25 @@ mod tests {
     }
 
     #[test]
-    fn test_acp_util_base64() {
+    fn test_gap_util_base64() {
         let mut runtime = PluginRuntime::new().unwrap();
-        let result = runtime.execute("ACP.util.base64('hello')").unwrap();
+        let result = runtime.execute("GAP.util.base64('hello')").unwrap();
         let encoded = result.as_string().unwrap().to_std_string_escaped();
         assert_eq!(encoded, "aGVsbG8=");
     }
 
     #[test]
-    fn test_acp_util_hex() {
+    fn test_gap_util_hex() {
         let mut runtime = PluginRuntime::new().unwrap();
-        let result = runtime.execute("ACP.util.hex('hello')").unwrap();
+        let result = runtime.execute("GAP.util.hex('hello')").unwrap();
         let encoded = result.as_string().unwrap().to_std_string_escaped();
         assert_eq!(encoded, "68656c6c6f");
     }
 
     #[test]
-    fn test_acp_util_now() {
+    fn test_gap_util_now() {
         let mut runtime = PluginRuntime::new().unwrap();
-        let result = runtime.execute("ACP.util.now()").unwrap();
+        let result = runtime.execute("GAP.util.now()").unwrap();
         let now = result.as_number().unwrap();
 
         // Should be a reasonable timestamp (after 2020)
@@ -1061,19 +1061,19 @@ mod tests {
     }
 
     #[test]
-    fn test_acp_util_iso_date() {
+    fn test_gap_util_iso_date() {
         let mut runtime = PluginRuntime::new().unwrap();
         // Use a fixed timestamp: 2024-01-01 00:00:00 UTC = 1704067200000 ms
-        let result = runtime.execute("ACP.util.isoDate(1704067200000)").unwrap();
+        let result = runtime.execute("GAP.util.isoDate(1704067200000)").unwrap();
         let date = result.as_string().unwrap().to_std_string_escaped();
         assert!(date.starts_with("2024-01-01T00:00:00"));
     }
 
     #[test]
-    fn test_acp_util_amz_date() {
+    fn test_gap_util_amz_date() {
         let mut runtime = PluginRuntime::new().unwrap();
         // Use a fixed timestamp: 2024-01-01 00:00:00 UTC = 1704067200000 ms
-        let result = runtime.execute("ACP.util.amzDate(1704067200000)").unwrap();
+        let result = runtime.execute("GAP.util.amzDate(1704067200000)").unwrap();
         let date = result.as_string().unwrap().to_std_string_escaped();
         assert_eq!(date, "20240101T000000Z");
     }
@@ -1119,7 +1119,7 @@ mod tests {
     async fn test_load_plugin() {
         use crate::storage::FileStore;
 
-        let temp_dir = std::env::temp_dir().join(format!("acp_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let temp_dir = std::env::temp_dir().join(format!("gap_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let store = FileStore::new(temp_dir.clone()).await.unwrap();
 
         // Create a simple plugin
@@ -1179,7 +1179,7 @@ mod tests {
 
         let plugin_code = r#"
         var plugin = {
-            name: "exa-acp",
+            name: "exa-gap",
             matchPatterns: [],
             credentialSchema: [],
             transform: function(request, credentials) { return request; }
@@ -1188,13 +1188,13 @@ mod tests {
 
         runtime.execute(plugin_code).unwrap();
 
-        // Should succeed even though internal name is "exa-acp" but we're using GitHub path
-        let result = runtime.extract_plugin_metadata("mikekelly/exa-acp");
+        // Should succeed even though internal name is "exa-gap" but we're using GitHub path
+        let result = runtime.extract_plugin_metadata("mikekelly/exa-gap");
 
         assert!(result.is_ok());
         let plugin = result.unwrap();
         // The plugin name should be the GitHub path, not the internal name
-        assert_eq!(plugin.name, "mikekelly/exa-acp");
+        assert_eq!(plugin.name, "mikekelly/exa-gap");
     }
 
     #[test]
@@ -1204,7 +1204,7 @@ mod tests {
 
         let plugin_code = r#"
         var plugin = {
-            name: "exa-acp",
+            name: "exa-gap",
             matchPatterns: ["api.exa.ai"],
             credentialSchema: {
                 fields: [
@@ -1219,9 +1219,9 @@ mod tests {
         "#;
 
         runtime.execute(plugin_code).unwrap();
-        let plugin = runtime.extract_plugin_metadata("mikekelly/exa-acp").unwrap();
+        let plugin = runtime.extract_plugin_metadata("mikekelly/exa-gap").unwrap();
 
-        assert_eq!(plugin.name, "mikekelly/exa-acp");
+        assert_eq!(plugin.name, "mikekelly/exa-gap");
         assert_eq!(plugin.match_patterns, vec!["api.exa.ai"]);
         // Should extract just the "name" field from each object in the fields array
         assert_eq!(plugin.credential_schema, vec!["apiKey"]);
@@ -1406,18 +1406,18 @@ mod tests {
         assert_eq!(result2.as_string().unwrap().to_std_string_escaped(), "us-west-2");
     }
 
-    // Tests for ACP.log function
+    // Tests for GAP.log function
     #[test]
-    fn test_acp_log_exists() {
+    fn test_gap_log_exists() {
         let mut runtime = PluginRuntime::new().unwrap();
-        assert!(runtime.execute("typeof ACP.log").unwrap().as_string().unwrap().to_std_string_escaped() == "function");
+        assert!(runtime.execute("typeof GAP.log").unwrap().as_string().unwrap().to_std_string_escaped() == "function");
     }
 
     #[test]
-    fn test_acp_log_captures_messages() {
+    fn test_gap_log_captures_messages() {
         let mut runtime = PluginRuntime::new().unwrap();
-        runtime.execute("ACP.log('hello')").unwrap();
-        runtime.execute("ACP.log('world')").unwrap();
+        runtime.execute("GAP.log('hello')").unwrap();
+        runtime.execute("GAP.log('world')").unwrap();
 
         let logs = runtime.get_logs();
         assert_eq!(logs.len(), 2);
@@ -1426,10 +1426,10 @@ mod tests {
     }
 
     #[test]
-    fn test_acp_log_clear() {
+    fn test_gap_log_clear() {
         let mut runtime = PluginRuntime::new().unwrap();
-        runtime.execute("ACP.log('test1')").unwrap();
-        runtime.execute("ACP.log('test2')").unwrap();
+        runtime.execute("GAP.log('test1')").unwrap();
+        runtime.execute("GAP.log('test2')").unwrap();
 
         assert_eq!(runtime.get_logs().len(), 2);
 
@@ -1438,11 +1438,11 @@ mod tests {
     }
 
     #[test]
-    fn test_acp_log_converts_types() {
+    fn test_gap_log_converts_types() {
         let mut runtime = PluginRuntime::new().unwrap();
-        runtime.execute("ACP.log(123)").unwrap();
-        runtime.execute("ACP.log(true)").unwrap();
-        runtime.execute("ACP.log({key: 'value'})").unwrap();
+        runtime.execute("GAP.log(123)").unwrap();
+        runtime.execute("GAP.log(true)").unwrap();
+        runtime.execute("GAP.log({key: 'value'})").unwrap();
 
         let logs = runtime.get_logs();
         assert_eq!(logs.len(), 3);
@@ -1565,8 +1565,8 @@ mod tests {
             credentialSchema: [],
             transform: function(request, credentials) {
                 // Busy loop for a while
-                var start = ACP.util.now();
-                while (ACP.util.now() - start < 100) {
+                var start = GAP.util.now();
+                while (GAP.util.now() - start < 100) {
                     // Spin
                 }
                 request.headers["X-Slow"] = "true";

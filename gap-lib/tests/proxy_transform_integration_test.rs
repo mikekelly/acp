@@ -16,7 +16,7 @@ use std::sync::Arc;
 #[tokio::test]
 async fn test_parse_and_transform_with_multi_field_credentials() {
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_proxy_creds_test_{}",
+        "gap_proxy_creds_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -81,7 +81,7 @@ async fn test_parse_and_transform_with_multi_field_credentials() {
 #[tokio::test]
 async fn test_parse_and_transform_with_single_field_credential() {
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_proxy_single_test_{}",
+        "gap_proxy_single_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -138,7 +138,7 @@ async fn test_parse_and_transform_with_single_field_credential() {
 #[tokio::test]
 async fn test_parse_and_transform_missing_credentials() {
     let temp_dir = std::env::temp_dir().join(format!(
-        "acp_proxy_missing_test_{}",
+        "gap_proxy_missing_test_{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

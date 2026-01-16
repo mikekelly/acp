@@ -5,12 +5,12 @@
 
 use thiserror::Error;
 
-/// Result type alias using AcpError
-pub type Result<T> = std::result::Result<T, AcpError>;
+/// Result type alias using GapError
+pub type Result<T> = std::result::Result<T, GapError>;
 
 /// Comprehensive error type for all GAP operations
 #[derive(Error, Debug)]
-pub enum AcpError {
+pub enum GapError {
     /// IO errors (file operations, network)
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -64,7 +64,7 @@ pub enum AcpError {
     Other(#[from] anyhow::Error),
 }
 
-impl AcpError {
+impl GapError {
     /// Create a storage error with context
     pub fn storage(msg: impl Into<String>) -> Self {
         Self::Storage(msg.into())
@@ -122,21 +122,21 @@ mod tests {
 
     #[test]
     fn test_error_creation() {
-        let err = AcpError::storage("keychain unavailable");
+        let err = GapError::storage("keychain unavailable");
         assert_eq!(err.to_string(), "Storage error: keychain unavailable");
 
-        let err = AcpError::plugin("timeout");
+        let err = GapError::plugin("timeout");
         assert_eq!(err.to_string(), "Plugin error: timeout");
 
-        let err = AcpError::auth("invalid token");
+        let err = GapError::auth("invalid token");
         assert_eq!(err.to_string(), "Authentication error: invalid token");
     }
 
     #[test]
     fn test_error_conversion_from_io() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let acp_err: AcpError = io_err.into();
-        assert!(matches!(acp_err, AcpError::Io(_)));
+        let gap_err: GapError = io_err.into();
+        assert!(matches!(gap_err, GapError::Io(_)));
     }
 
     #[test]

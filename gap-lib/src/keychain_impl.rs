@@ -24,7 +24,7 @@ fn cvt(status: OSStatus) -> Result<()> {
     if status == errSecSuccess {
         Ok(())
     } else {
-        Err(crate::AcpError::storage(format!(
+        Err(crate::GapError::storage(format!(
             "Keychain operation failed with status: {}",
             status
         )))
@@ -114,7 +114,7 @@ pub fn get_generic_password_with_access_group(
             Ok(Some(vec))
         } else {
             unsafe { CFRelease(ret) };
-            Err(crate::AcpError::storage(
+            Err(crate::GapError::storage(
                 "Unexpected data type from keychain",
             ))
         }

@@ -10,7 +10,7 @@
 
 use crate::{
     storage::SecretStore,
-    AcpError, Result,
+    GapError, Result,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -101,7 +101,7 @@ impl Registry {
         match self.store.get(Self::KEY).await? {
             Some(bytes) => {
                 let data = serde_json::from_slice(&bytes).map_err(|e| {
-                    AcpError::storage(format!("Failed to parse registry JSON: {}", e))
+                    GapError::storage(format!("Failed to parse registry JSON: {}", e))
                 })?;
                 Ok(data)
             }
@@ -117,7 +117,7 @@ impl Registry {
     /// Serializes the RegistryData to JSON and stores it at the registry key.
     pub async fn save(&self, data: &RegistryData) -> Result<()> {
         let bytes = serde_json::to_vec(data)
-            .map_err(|e| AcpError::storage(format!("Failed to serialize registry: {}", e)))?;
+            .map_err(|e| GapError::storage(format!("Failed to serialize registry: {}", e)))?;
         self.store.set(Self::KEY, &bytes).await
     }
 
@@ -1088,7 +1088,7 @@ mod tests {
         assert_eq!(result.unwrap().name, "test-agent");
 
         // Get non-existent token
-        let result = registry.get_token("acp_nonexistent")
+        let result = registry.get_token("gap_nonexistent")
             .await
             .expect("get should succeed");
         assert!(result.is_none());

@@ -7,7 +7,7 @@
 //! - Bidirectional proxying
 //! - Bearer token authentication
 
-use crate::error::{AcpError, Result};
+use crate::error::{GapError, Result};
 use crate::registry::Registry;
 use crate::storage::SecretStore;
 use crate::tls::CertificateAuthority;
@@ -100,7 +100,7 @@ impl ProxyServer {
     pub async fn start(&self) -> Result<()> {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", self.port))
             .await
-            .map_err(|e| AcpError::network(format!("Failed to bind to port {}: {}", self.port, e)))?;
+            .map_err(|e| GapError::network(format!("Failed to bind to port {}: {}", self.port, e)))?;
 
         info!("Proxy server listening on 127.0.0.1:{}", self.port);
 
@@ -108,7 +108,7 @@ impl ProxyServer {
             let (stream, addr) = listener
                 .accept()
                 .await
-                .map_err(|e| AcpError::network(format!("Failed to accept connection: {}", e)))?;
+                .map_err(|e| GapError::network(format!("Failed to accept connection: {}", e)))?;
 
             debug!("Accepted connection from {}", addr);
 
@@ -140,7 +140,7 @@ async fn handle_connection(
     reader
         .read_line(&mut request_line)
         .await
-        .map_err(|e| AcpError::network(format!("Failed to read request line: {}", e)))?;
+        .map_err(|e| GapError::network(format!("Failed to read request line: {}", e)))?;
 
     debug!("Request line: {}", request_line.trim());
 
@@ -155,7 +155,7 @@ async fn handle_connection(
         reader
             .read_line(&mut line)
             .await
-            .map_err(|e| AcpError::network(format!("Failed to read header: {}", e)))?;
+            .map_err(|e| GapError::network(format!("Failed to read header: {}", e)))?;
 
         if line == "\r\n" || line == "\n" {
             break;
@@ -175,7 +175,7 @@ async fn handle_connection(
     stream
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .await
-        .map_err(|e| AcpError::network(format!("Failed to send CONNECT response: {}", e)))?;
+        .map_err(|e| GapError::network(format!("Failed to send CONNECT response: {}", e)))?;
 
     debug!("Sent 200 Connection Established");
 
@@ -200,11 +200,11 @@ async fn handle_connection(
 fn parse_connect_request(line: &str) -> Result<String> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.len() < 2 {
-        return Err(AcpError::protocol("Invalid CONNECT request"));
+        return Err(GapError::protocol("Invalid CONNECT request"));
     }
 
     if parts[0] != "CONNECT" {
-        return Err(AcpError::protocol(format!(
+        return Err(GapError::protocol(format!(
             "Expected CONNECT, got {}",
             parts[0]
         )));
@@ -228,7 +228,7 @@ async fn validate_auth(
             let token_value = if let Some(bearer_token) = value.strip_prefix("Bearer ") {
                 bearer_token.to_string()
             } else {
-                return Err(AcpError::auth("Invalid authorization scheme, expected Bearer"));
+                return Err(GapError::auth("Invalid authorization scheme, expected Bearer"));
             };
 
             // Check if token exists in registry using O(1) lookup
@@ -248,24 +248,24 @@ async fn validate_auth(
                 });
             }
 
-            return Err(AcpError::auth("Invalid bearer token"));
+            return Err(GapError::auth("Invalid bearer token"));
         }
     }
 
-    Err(AcpError::auth("Missing Proxy-Authorization header"))
+    Err(GapError::auth("Missing Proxy-Authorization header"))
 }
 
 /// Parse host:port from target
 fn parse_host_port(target: &str) -> Result<(String, u16)> {
     let parts: Vec<&str> = target.split(':').collect();
     if parts.len() != 2 {
-        return Err(AcpError::protocol(format!("Invalid target: {}", target)));
+        return Err(GapError::protocol(format!("Invalid target: {}", target)));
     }
 
     let hostname = parts[0].to_string();
     let port = parts[1]
         .parse::<u16>()
-        .map_err(|_| AcpError::protocol(format!("Invalid port: {}", parts[1])))?;
+        .map_err(|_| GapError::protocol(format!("Invalid port: {}", parts[1])))?;
 
     Ok((hostname, port))
 }
@@ -279,7 +279,7 @@ async fn accept_agent_tls(
     // Generate certificate for this hostname (returns DER format)
     let (cert_der, key_der) = ca
         .sign_for_hostname(hostname, None)
-        .map_err(|e| AcpError::tls(format!("Failed to sign certificate: {}", e)))?;
+        .map_err(|e| GapError::tls(format!("Failed to sign certificate: {}", e)))?;
 
     // Convert DER bytes to rustls types
     // For a self-signed CA, we need to include the CA cert in the chain
@@ -291,13 +291,13 @@ async fn accept_agent_tls(
 
     // Parse private key from DER
     let key_der = rustls::pki_types::PrivateKeyDer::try_from(key_der)
-        .map_err(|e| AcpError::tls(format!("Failed to parse key DER: {:?}", e)))?;
+        .map_err(|e| GapError::tls(format!("Failed to parse key DER: {:?}", e)))?;
 
     // Build server config
     let server_config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key_der)
-        .map_err(|e| AcpError::tls(format!("Failed to create server config: {}", e)))?;
+        .map_err(|e| GapError::tls(format!("Failed to create server config: {}", e)))?;
 
     let acceptor = TlsAcceptor::from(Arc::new(server_config));
 
@@ -305,7 +305,7 @@ async fn accept_agent_tls(
     let tls_stream = acceptor
         .accept(stream)
         .await
-        .map_err(|e| AcpError::tls(format!("Failed to accept TLS: {}", e)))?;
+        .map_err(|e| GapError::tls(format!("Failed to accept TLS: {}", e)))?;
 
     Ok(tls_stream)
 }
@@ -319,16 +319,16 @@ async fn connect_upstream(
     // Connect TCP
     let tcp_stream = TcpStream::connect(format!("{}:{}", hostname, port))
         .await
-        .map_err(|e| AcpError::network(format!("Failed to connect to upstream: {}", e)))?;
+        .map_err(|e| GapError::network(format!("Failed to connect to upstream: {}", e)))?;
 
     // Upgrade to TLS
     let server_name = rustls::pki_types::ServerName::try_from(hostname.to_string())
-        .map_err(|_| AcpError::tls(format!("Invalid server name: {}", hostname)))?;
+        .map_err(|_| GapError::tls(format!("Invalid server name: {}", hostname)))?;
 
     let tls_stream = connector
         .connect(server_name, tcp_stream)
         .await
-        .map_err(|e| AcpError::tls(format!("Failed to connect upstream TLS: {}", e)))?;
+        .map_err(|e| GapError::tls(format!("Failed to connect upstream TLS: {}", e)))?;
 
     Ok(tls_stream)
 }
@@ -354,7 +354,7 @@ where
     // Read until we have a complete HTTP request (ends with \r\n\r\n or \n\n)
     loop {
         let n = agent.read(&mut temp_buf).await
-            .map_err(|e| AcpError::network(format!("Failed to read from agent: {}", e)))?;
+            .map_err(|e| GapError::network(format!("Failed to read from agent: {}", e)))?;
 
         if n == 0 {
             // Connection closed
@@ -370,7 +370,7 @@ where
 
         // Safety: don't read forever
         if buffer.len() > 1024 * 1024 {
-            return Err(AcpError::protocol("HTTP request too large"));
+            return Err(GapError::protocol("HTTP request too large"));
         }
     }
 
@@ -379,7 +379,7 @@ where
 
     // Forward transformed request to upstream
     upstream.write_all(&transformed_bytes).await
-        .map_err(|e| AcpError::network(format!("Failed to write to upstream: {}", e)))?;
+        .map_err(|e| GapError::network(format!("Failed to write to upstream: {}", e)))?;
 
     debug!("Forwarded transformed request to upstream");
 
@@ -390,13 +390,13 @@ where
     let agent_to_upstream = async {
         tokio::io::copy(&mut agent_read, &mut upstream_write)
             .await
-            .map_err(|e| AcpError::network(format!("Agent to upstream copy failed: {}", e)))
+            .map_err(|e| GapError::network(format!("Agent to upstream copy failed: {}", e)))
     };
 
     let upstream_to_agent = async {
         tokio::io::copy(&mut upstream_read, &mut agent_write)
             .await
-            .map_err(|e| AcpError::network(format!("Upstream to agent copy failed: {}", e)))
+            .map_err(|e| GapError::network(format!("Upstream to agent copy failed: {}", e)))
     };
 
     tokio::select! {
@@ -427,13 +427,13 @@ where
     let agent_to_upstream = async {
         tokio::io::copy(&mut agent_read, &mut upstream_write)
             .await
-            .map_err(|e| AcpError::network(format!("Agent to upstream copy failed: {}", e)))
+            .map_err(|e| GapError::network(format!("Agent to upstream copy failed: {}", e)))
     };
 
     let upstream_to_agent = async {
         tokio::io::copy(&mut upstream_read, &mut agent_write)
             .await
-            .map_err(|e| AcpError::network(format!("Upstream to agent copy failed: {}", e)))
+            .map_err(|e| GapError::network(format!("Upstream to agent copy failed: {}", e)))
     };
 
     // Run both until either completes

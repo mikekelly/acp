@@ -128,7 +128,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_matching_plugin_exact_match() {
         let temp_dir = std::env::temp_dir().join(format!(
-            "acp_matcher_test_{}",
+            "gap_matcher_test_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -168,7 +168,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_matching_plugin_wildcard() {
         let temp_dir = std::env::temp_dir().join(format!(
-            "acp_matcher_wildcard_test_{}",
+            "gap_matcher_wildcard_test_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -208,7 +208,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_matching_plugin_no_match() {
         let temp_dir = std::env::temp_dir().join(format!(
-            "acp_matcher_nomatch_test_{}",
+            "gap_matcher_nomatch_test_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -255,7 +255,7 @@ mod tests {
         // We'll store INVALID JavaScript. If matching happens AFTER we check PluginEntry.hosts,
         // we should still be able to reject non-matches efficiently.
         let temp_dir = std::env::temp_dir().join(format!(
-            "acp_matcher_registry_test_{}",
+            "gap_matcher_registry_test_{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
