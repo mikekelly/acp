@@ -1,4 +1,4 @@
-# Test runner image for ACP integration tests
+# Test runner image for GAP integration tests
 # Based on Debian slim with curl, jq, and sha512sum
 
 FROM debian:bookworm-slim

@@ -1,65 +1,65 @@
-# Docker Compose configuration for ACP testing and development
-# This sets up a complete test environment with ACP server and optional test services
+# Docker Compose configuration for GAP testing and development
+# This sets up a complete test environment with GAP server and optional test services
 #
 # Usage:
-#   Local build:      docker compose up acp-server
-#   Docker Hub image: docker compose up acp-server-hub
+#   Local build:      docker compose up gap-server
+#   Docker Hub image: docker compose up gap-server-hub
 #   Run tests:        docker compose --profile test up
 
 services:
-  # ACP server (local build from Dockerfile)
-  acp-server:
+  # GAP server (local build from Dockerfile)
+  gap-server:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: acp-server
+    container_name: gap-server
     ports:
       - "9443:9443"
       - "9080:9080"
     volumes:
-      - acp-data:/var/lib/acp
+      - gap-data:/var/lib/gap
     environment:
       - RUST_LOG=gap_server=info,gap_lib=info
     restart: unless-stopped
     networks:
-      - acp-network
+      - gap-network
 
-  # ACP server (from Docker Hub)
-  acp-server-hub:
-    image: mikekelly321/acp:latest
-    container_name: acp-server-hub
+  # GAP server (from Docker Hub)
+  gap-server-hub:
+    image: mikekelly321/gap:latest
+    container_name: gap-server-hub
     ports:
       - "9443:9443"
       - "9080:9080"
     volumes:
-      - acp-data:/var/lib/acp
+      - gap-data:/var/lib/gap
     environment:
       - RUST_LOG=gap_server=info,gap_lib=info
     restart: unless-stopped
     networks:
-      - acp-network
+      - gap-network
     profiles:
       - hub
 
   # Integration test runner
-  # Runs comprehensive integration tests against the ACP server
+  # Runs comprehensive integration tests against the GAP server
   # Usage: docker compose up test-runner --build
   test-runner:
     build:
       context: .
       dockerfile: Dockerfile.test-runner
-    container_name: acp-test-runner
+    container_name: gap-test-runner
     depends_on:
-      acp-server:
+      gap-server:
         condition: service_healthy
       mock-api:
         condition: service_started
     volumes:
       - ./smoke-tests/test-docker-integration.sh:/tests/test-docker-integration.sh:ro
     environment:
-      - GAP_SERVER_URL=http://acp-server:9080
+      - GAP_SERVER_URL=http://gap-server:9080
     networks:
-      - acp-network
+      - gap-network
     profiles:
       - test
 
@@ -67,20 +67,20 @@ services:
   # Provides a simple echo/mirror service to test proxy behavior
   mock-api:
     image: mccutchen/go-httpbin
-    container_name: acp-mock-api
+    container_name: gap-mock-api
     ports:
       - "8080:8080"
     networks:
-      - acp-network
+      - gap-network
     restart: unless-stopped
 
 volumes:
-  # Persistent storage for ACP data
+  # Persistent storage for GAP data
   # Contains: secrets, plugins, tokens, CA key
-  acp-data:
+  gap-data:
     driver: local
 
 networks:
-  # Isolated network for ACP services
-  acp-network:
+  # Isolated network for GAP services
+  gap-network:
     driver: bridge

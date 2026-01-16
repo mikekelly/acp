@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Agent Credential Proxy (ACP) Installation Script
+# GAP (Generic Agent Proxy) Installation Script
 # Supports macOS and Linux
 # Usage: curl -fsSL https://example.com/install.sh | bash
 #        or: ./install.sh [--prefix /custom/path] [--build-from-source]
@@ -7,7 +7,7 @@
 set -e
 
 # Configuration
-VERSION="${ACP_VERSION:-latest}"
+VERSION="${GAP_VERSION:-latest}"
 PREFIX="${PREFIX:-/usr/local}"
 INSTALL_DIR="${PREFIX}/bin"
 BUILD_FROM_SOURCE="${BUILD_FROM_SOURCE:-false}"
@@ -82,14 +82,14 @@ check_requirements() {
 
 # Build from source
 build_from_source() {
-    log_info "Building ACP from source..."
+    log_info "Building GAP from source..."
 
     TEMP_DIR=$(mktemp -d)
     cd "$TEMP_DIR"
 
     log_info "Cloning repository..."
-    git clone "https://github.com/${GITHUB_REPO}.git" acp
-    cd acp
+    git clone "https://github.com/${GITHUB_REPO}.git" gap
+    cd gap
 
     if [ "$VERSION" != "latest" ]; then
         log_info "Checking out version $VERSION..."
@@ -101,8 +101,8 @@ build_from_source() {
 
     log_info "Installing binaries to $INSTALL_DIR..."
     mkdir -p "$INSTALL_DIR"
-    cp target/release/acp "$INSTALL_DIR/acp"
-    cp target/release/acp-server "$INSTALL_DIR/acp-server"
+    cp target/release/gap "$INSTALL_DIR/gap"
+    cp target/release/gap-server "$INSTALL_DIR/gap-server"
 
     cd /
     rm -rf "$TEMP_DIR"
@@ -115,26 +115,26 @@ download_binary() {
     log_info "Downloading pre-built binaries for $PLATFORM..."
 
     if [ "$VERSION" = "latest" ]; then
-        DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/acp-${PLATFORM}.tar.gz"
+        DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/gap-${PLATFORM}.tar.gz"
     else
-        DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/acp-${PLATFORM}.tar.gz"
+        DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/gap-${PLATFORM}.tar.gz"
     fi
 
     TEMP_DIR=$(mktemp -d)
     cd "$TEMP_DIR"
 
     log_info "Downloading from $DOWNLOAD_URL..."
-    if ! curl -fsSL "$DOWNLOAD_URL" -o acp.tar.gz; then
+    if ! curl -fsSL "$DOWNLOAD_URL" -o gap.tar.gz; then
         log_error "Failed to download binary. Try --build-from-source instead."
     fi
 
     log_info "Extracting archive..."
-    tar -xzf acp.tar.gz
+    tar -xzf gap.tar.gz
 
     log_info "Installing binaries to $INSTALL_DIR..."
     mkdir -p "$INSTALL_DIR"
-    cp acp "$INSTALL_DIR/acp"
-    cp acp-server "$INSTALL_DIR/acp-server"
+    cp gap "$INSTALL_DIR/gap"
+    cp gap-server "$INSTALL_DIR/gap-server"
 
     cd /
     rm -rf "$TEMP_DIR"
@@ -144,38 +144,38 @@ download_binary() {
 
 # Set executable permissions
 set_permissions() {
-    chmod +x "$INSTALL_DIR/acp"
-    chmod +x "$INSTALL_DIR/acp-server"
+    chmod +x "$INSTALL_DIR/gap"
+    chmod +x "$INSTALL_DIR/gap-server"
     log_info "Set executable permissions"
 }
 
 # Verify installation
 verify_installation() {
-    if [ ! -x "$INSTALL_DIR/acp" ]; then
-        log_error "Installation verification failed: acp binary not found or not executable"
+    if [ ! -x "$INSTALL_DIR/gap" ]; then
+        log_error "Installation verification failed: gap binary not found or not executable"
     fi
 
-    if [ ! -x "$INSTALL_DIR/acp-server" ]; then
-        log_error "Installation verification failed: acp-server binary not found or not executable"
+    if [ ! -x "$INSTALL_DIR/gap-server" ]; then
+        log_error "Installation verification failed: gap-server binary not found or not executable"
     fi
 
-    log_info "Verifying acp binary..."
-    "$INSTALL_DIR/acp" --version || log_error "acp binary verification failed"
+    log_info "Verifying gap binary..."
+    "$INSTALL_DIR/gap" --version || log_error "gap binary verification failed"
 
-    log_info "Verifying acp-server binary..."
-    "$INSTALL_DIR/acp-server" --version || log_error "acp-server binary verification failed"
+    log_info "Verifying gap-server binary..."
+    "$INSTALL_DIR/gap-server" --version || log_error "gap-server binary verification failed"
 }
 
 # Print post-installation instructions
 print_instructions() {
     echo ""
     echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}ACP installed successfully!${NC}"
+    echo -e "${GREEN}GAP installed successfully!${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
     echo "Binaries installed to:"
-    echo "  - $INSTALL_DIR/acp"
-    echo "  - $INSTALL_DIR/acp-server"
+    echo "  - $INSTALL_DIR/gap"
+    echo "  - $INSTALL_DIR/gap-server"
     echo ""
 
     # Check if install dir is in PATH
@@ -188,10 +188,10 @@ print_instructions() {
     fi
 
     echo "Next steps:"
-    echo "  1. Start the server: acp-server"
-    echo "  2. Initialize ACP: acp init"
-    echo "  3. Create a token: acp token create mytoken"
-    echo "  4. Install a plugin: acp plugin install <plugin-url>"
+    echo "  1. Start the server: gap-server"
+    echo "  2. Initialize GAP: gap init"
+    echo "  3. Create a token: gap token create mytoken"
+    echo "  4. Install a plugin: gap plugin install <plugin-url>"
     echo ""
     echo "For more information, visit: https://github.com/${GITHUB_REPO}"
     echo ""
@@ -215,7 +215,7 @@ parse_args() {
                 shift 2
                 ;;
             --help)
-                echo "ACP Installation Script"
+                echo "GAP Installation Script"
                 echo ""
                 echo "Usage: $0 [OPTIONS]"
                 echo ""
@@ -226,7 +226,7 @@ parse_args() {
                 echo "  --help                  Show this help message"
                 echo ""
                 echo "Environment variables:"
-                echo "  ACP_VERSION            Version to install (default: latest)"
+                echo "  GAP_VERSION            Version to install (default: latest)"
                 echo "  PREFIX                 Installation prefix (default: /usr/local)"
                 echo "  GITHUB_REPO            GitHub repository (default: yourusername/agent-credential-proxy)"
                 exit 0
@@ -240,7 +240,7 @@ parse_args() {
 
 # Main installation flow
 main() {
-    log_info "Starting ACP installation..."
+    log_info "Starting GAP installation..."
 
     parse_args "$@"
     detect_platform
