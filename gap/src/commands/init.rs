@@ -6,11 +6,11 @@ use anyhow::Result;
 use serde_json::json;
 
 pub async fn run(server_url: &str, ca_path: Option<&str>, management_sans: Option<&str>) -> Result<()> {
-    println!("Initializing ACP server...");
+    println!("Initializing GAP server...");
     println!();
 
     // Get password from user
-    let password = read_password_with_confirmation("Enter password for ACP: ")?;
+    let password = read_password_with_confirmation("Enter password for GAP: ")?;
     let password_hash = hash_password(&password);
 
     // Call init endpoint
@@ -55,13 +55,13 @@ pub async fn run(server_url: &str, ca_path: Option<&str>, management_sans: Optio
     let response: crate::client::InitResponse = client.post_auth("/init", &password_hash, body).await?;
 
     println!();
-    println!("ACP initialized successfully!");
+    println!("GAP initialized successfully!");
     println!("CA certificate saved to: {}", response.ca_path);
     println!();
     println!("Next steps:");
-    println!("  1. Install plugins: acp install <plugin>");
-    println!("  2. Configure credentials: acp set <plugin>:<key>");
-    println!("  3. Create agent tokens: acp token create <name>");
+    println!("  1. Install plugins: gap install <plugin>");
+    println!("  2. Configure credentials: gap set <plugin>:<key>");
+    println!("  3. Create agent tokens: gap token create <name>");
     println!();
     println!("Clients should be configured to trust the CA cert at the path above.");
 

@@ -86,7 +86,7 @@ impl CertificateAuthority {
 
         // Set distinguished name
         let mut dn = DistinguishedName::new();
-        dn.push(DnType::CommonName, "ACP Certificate Authority");
+        dn.push(DnType::CommonName, "GAP Certificate Authority");
         dn.push(DnType::OrganizationName, "GAP");
         params.distinguished_name = dn;
 
@@ -244,7 +244,7 @@ impl CertificateAuthority {
             } else if let Some(ip) = first_san.strip_prefix("IP:") {
                 ip
             } else {
-                "ACP Server"
+                "GAP Server"
             };
             dn.push(DnType::CommonName, cn);
         }
@@ -293,7 +293,7 @@ impl CertificateAuthority {
         // Recreate the CA certificate params
         let mut ca_params = CertificateParams::default();
         let mut ca_dn = DistinguishedName::new();
-        ca_dn.push(DnType::CommonName, "ACP Certificate Authority");
+        ca_dn.push(DnType::CommonName, "GAP Certificate Authority");
         ca_dn.push(DnType::OrganizationName, "GAP");
         ca_params.distinguished_name = ca_dn;
         ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);

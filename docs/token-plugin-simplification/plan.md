@@ -15,12 +15,12 @@ Remove unnecessary complexity from token storage and plugin matching. These are 
 ### Better Approach
 - Store tokens as `token:{token_value}` → `{ name, created_at }`
 - The token value IS the ID (no separate ID needed)
-- Direct lookup: `store.get("token:acp_xxxx")` — one read, no cache
+- Direct lookup: `store.get("token:gap_xxxx")` — one read, no cache
 - Remove TokenCache entirely
 
 ### Why the Cache Existed
 The cache was solving a data model problem, not a performance problem:
-1. Proxy receives bearer token value (e.g., `acp_xxxx`)
+1. Proxy receives bearer token value (e.g., `gap_xxxx`)
 2. Tokens stored by ID, not by value
 3. To find a token by value, must load all tokens and search
 4. Cache avoided repeating this O(N) search
@@ -55,11 +55,11 @@ This is O(N) JavaScript executions per request where N = number of plugins.
 ## Changes Required
 
 ### Remove TokenCache
-- Delete `acp-lib/src/token_cache.rs`
-- Update `acp-lib/src/lib.rs` to remove export
-- Update `acp-server/src/main.rs` to use direct storage lookup
-- Update `acp-lib/src/proxy.rs` to look up tokens directly
-- Update `acp-server/src/api.rs` token endpoints
+- Delete `gap-lib/src/token_cache.rs`
+- Update `gap-lib/src/lib.rs` to remove export
+- Update `gap-server/src/main.rs` to use direct storage lookup
+- Update `gap-lib/src/proxy.rs` to look up tokens directly
+- Update `gap-server/src/api.rs` token endpoints
 
 ### Change Token Storage Schema
 - Store: `token:{token_value}` → `{ name, created_at }`

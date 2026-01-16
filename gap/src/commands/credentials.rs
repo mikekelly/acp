@@ -23,7 +23,7 @@ pub async fn set(server_url: &str, key: &str) -> Result<()> {
 
     let client = crate::create_api_client(server_url)?;
 
-    // URL-encode plugin name since it may contain slashes (e.g., "mikekelly/exa-acp")
+    // URL-encode plugin name since it may contain slashes (e.g., "mikekelly/exa-gap")
     let encoded_plugin = urlencoding::encode(plugin);
     let path = format!("/credentials/{}/{}", encoded_plugin, credential_key);
     let body = json!({

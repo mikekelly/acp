@@ -8,7 +8,7 @@ use thiserror::Error;
 /// Result type alias using AcpError
 pub type Result<T> = std::result::Result<T, AcpError>;
 
-/// Comprehensive error type for all ACP operations
+/// Comprehensive error type for all GAP operations
 #[derive(Error, Debug)]
 pub enum AcpError {
     /// IO errors (file operations, network)

@@ -38,7 +38,7 @@ enum Commands {
         ///
         /// Examples:
         ///   --management-sans "DNS:localhost,IP:127.0.0.1"
-        ///   --management-sans "DNS:acp.local,DNS:localhost,IP:192.168.1.100"
+        ///   --management-sans "DNS:gap.local,DNS:localhost,IP:192.168.1.100"
         #[arg(long, value_name = "SANS")]
         management_sans: Option<String>,
     },
@@ -92,7 +92,7 @@ enum Commands {
         ///
         /// Examples:
         ///   --sans "DNS:localhost,IP:127.0.0.1"
-        ///   --sans "DNS:acp.local,DNS:localhost,IP:192.168.1.100"
+        ///   --sans "DNS:gap.local,DNS:localhost,IP:192.168.1.100"
         #[arg(long, value_name = "SANS")]
         sans: String,
     },

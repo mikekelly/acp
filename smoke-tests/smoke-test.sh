@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Comprehensive ACP Smoke Test
+# Comprehensive GAP Smoke Test
 # Tests the full workflow using the CLI as users would in the real world
 
 # Colors for output
@@ -41,14 +41,14 @@ API_PORT=19080
 PROXY_PORT=19443
 
 # CLI binary paths
-ACP="$WORKSPACE_ROOT/target/release/gap"
+GAP="$WORKSPACE_ROOT/target/release/gap"
 GAP_SERVER="$WORKSPACE_ROOT/target/release/gap-server"
 
 # Export password for CLI (undocumented env var for testing)
 export GAP_PASSWORD="$TEST_PASSWORD"
 
 log_info "====================================="
-log_info "ACP Comprehensive Smoke Test"
+log_info "GAP Comprehensive Smoke Test"
 log_info "====================================="
 echo ""
 
@@ -117,8 +117,8 @@ log_step "Phase 2: Initialization"
 echo "-----------------------------------"
 
 # 2.1: Initialize server using CLI
-log_step "Phase 2.1: Initializing server with 'acp init'"
-INIT_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" init --ca-path "$TEMP_DIR/ca.crt" 2>&1)
+log_step "Phase 2.1: Initializing server with 'gap init'"
+INIT_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" init --ca-path "$TEMP_DIR/ca.crt" 2>&1)
 
 if echo "$INIT_OUTPUT" | grep -q "initialized successfully"; then
     log_success "Server initialized via CLI"
@@ -129,8 +129,8 @@ else
 fi
 
 # 2.2: Verify status using CLI
-log_step "Phase 2.2: Checking status with 'acp status'"
-STATUS_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" status 2>&1)
+log_step "Phase 2.2: Checking status with 'gap status'"
+STATUS_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" status 2>&1)
 
 if echo "$STATUS_OUTPUT" | grep -q "Version:"; then
     VERSION=$(echo "$STATUS_OUTPUT" | grep "Version:" | awk '{print $2}')
@@ -148,9 +148,9 @@ log_step "Phase 3: Token Management"
 echo "-----------------------------------"
 
 # 3.1: Create token using CLI
-log_step "Phase 3.1: Creating agent token with 'acp token create'"
+log_step "Phase 3.1: Creating agent token with 'gap token create'"
 TOKEN_NAME="smoke-test-agent-$(date +%s)"
-TOKEN_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" token create "$TOKEN_NAME" 2>&1)
+TOKEN_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" token create "$TOKEN_NAME" 2>&1)
 
 if echo "$TOKEN_OUTPUT" | grep -q "Token created"; then
     TOKEN_ID=$(echo "$TOKEN_OUTPUT" | grep "ID:" | awk '{print $2}')
@@ -161,8 +161,8 @@ else
 fi
 
 # 3.2: List tokens using CLI
-log_step "Phase 3.2: Listing tokens with 'acp token list'"
-LIST_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" token list 2>&1)
+log_step "Phase 3.2: Listing tokens with 'gap token list'"
+LIST_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" token list 2>&1)
 
 if echo "$LIST_OUTPUT" | grep -q "$TOKEN_NAME"; then
     log_success "Token appears in list"
@@ -172,8 +172,8 @@ else
 fi
 
 # 3.3: Revoke token using CLI
-log_step "Phase 3.3: Revoking token with 'acp token revoke'"
-REVOKE_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" token revoke "$TOKEN_ID" 2>&1)
+log_step "Phase 3.3: Revoking token with 'gap token revoke'"
+REVOKE_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" token revoke "$TOKEN_ID" 2>&1)
 
 if echo "$REVOKE_OUTPUT" | grep -qi "revoked\|deleted\|success"; then
     log_success "Token revoked"
@@ -184,7 +184,7 @@ fi
 
 # 3.4: Verify token is gone
 log_step "Phase 3.4: Verifying token was deleted"
-LIST_AFTER=$("$ACP" --server "http://localhost:$API_PORT" token list 2>&1)
+LIST_AFTER=$("$GAP" --server "http://localhost:$API_PORT" token list 2>&1)
 
 if echo "$LIST_AFTER" | grep -q "$TOKEN_NAME"; then
     log_error "Token still appears after deletion"
@@ -201,10 +201,10 @@ log_step "Phase 4: Plugin Management"
 echo "-----------------------------------"
 
 # 4.1: Install plugin using CLI
-# Using mikekelly/test-acp - a test plugin for echo.free.beeceptor.com
-# See: https://github.com/mikekelly/test-acp
-log_step "Phase 4.1: Installing plugin with 'acp install mikekelly/test-acp'"
-INSTALL_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/test-acp 2>&1)
+# Using mikekelly/test-gap - a test plugin for echo.free.beeceptor.com
+# See: https://github.com/mikekelly/test-gap
+log_step "Phase 4.1: Installing plugin with 'gap install mikekelly/test-gap'"
+INSTALL_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" install mikekelly/test-gap 2>&1)
 
 if echo "$INSTALL_OUTPUT" | grep -q "installed successfully"; then
     log_success "Plugin installed: mikekelly/test-gap"
@@ -214,8 +214,8 @@ else
 fi
 
 # 4.2: List plugins using CLI
-log_step "Phase 4.2: Listing plugins with 'acp plugins'"
-PLUGINS_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
+log_step "Phase 4.2: Listing plugins with 'gap plugins'"
+PLUGINS_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" plugins 2>&1)
 
 if echo "$PLUGINS_OUTPUT" | grep -q "mikekelly/test-gap"; then
     log_success "Plugin appears in list"
@@ -227,9 +227,9 @@ else
 fi
 
 # 4.3: Install second plugin
-# Using mikekelly/exa-acp - plugin for api.exa.ai
-log_step "Phase 4.3: Installing second plugin with 'acp install mikekelly/exa-acp'"
-INSTALL_EXA_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/exa-acp 2>&1)
+# Using mikekelly/exa-gap - plugin for api.exa.ai
+log_step "Phase 4.3: Installing second plugin with 'gap install mikekelly/exa-gap'"
+INSTALL_EXA_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" install mikekelly/exa-gap 2>&1)
 
 if echo "$INSTALL_EXA_OUTPUT" | grep -q "installed successfully"; then
     log_success "Plugin installed: mikekelly/exa-gap"
@@ -240,7 +240,7 @@ fi
 
 # 4.4: Verify both plugins appear in list
 log_step "Phase 4.4: Verifying both plugins appear in list"
-PLUGINS_BOTH=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
+PLUGINS_BOTH=$("$GAP" --server "http://localhost:$API_PORT" plugins 2>&1)
 
 if echo "$PLUGINS_BOTH" | grep -q "mikekelly/test-gap"; then
     log_success "First plugin still in list"
@@ -257,8 +257,8 @@ else
 fi
 
 # 4.5: Update plugin
-log_step "Phase 4.5: Updating plugin with 'acp update mikekelly/test-acp'"
-UPDATE_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" update mikekelly/test-acp 2>&1)
+log_step "Phase 4.5: Updating plugin with 'gap update mikekelly/test-gap'"
+UPDATE_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" update mikekelly/test-gap 2>&1)
 
 if echo "$UPDATE_OUTPUT" | grep -qi "updated successfully\|already up to date\|up-to-date"; then
     log_success "Plugin update completed"
@@ -274,8 +274,8 @@ else
 fi
 
 # 4.6: Uninstall plugin
-log_step "Phase 4.6: Uninstalling plugin with 'acp uninstall mikekelly/exa-acp'"
-UNINSTALL_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" uninstall mikekelly/exa-acp 2>&1)
+log_step "Phase 4.6: Uninstalling plugin with 'gap uninstall mikekelly/exa-gap'"
+UNINSTALL_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" uninstall mikekelly/exa-gap 2>&1)
 
 if echo "$UNINSTALL_OUTPUT" | grep -qi "uninstalled successfully\|removed successfully\|deleted successfully"; then
     log_success "Plugin uninstalled: mikekelly/exa-gap"
@@ -286,7 +286,7 @@ fi
 
 # 4.7: Verify plugin removed from list
 log_step "Phase 4.7: Verifying plugin removed from list"
-PLUGINS_AFTER_UNINSTALL=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
+PLUGINS_AFTER_UNINSTALL=$("$GAP" --server "http://localhost:$API_PORT" plugins 2>&1)
 
 if echo "$PLUGINS_AFTER_UNINSTALL" | grep -q "mikekelly/exa-gap"; then
     log_error "Plugin still appears after uninstall"
@@ -296,8 +296,8 @@ else
 fi
 
 # 4.8: Re-install after uninstall
-log_step "Phase 4.8: Re-installing plugin with 'acp install mikekelly/exa-acp'"
-REINSTALL_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/exa-acp 2>&1)
+log_step "Phase 4.8: Re-installing plugin with 'gap install mikekelly/exa-gap'"
+REINSTALL_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" install mikekelly/exa-gap 2>&1)
 
 if echo "$REINSTALL_OUTPUT" | grep -q "installed successfully"; then
     log_success "Plugin re-installed: mikekelly/exa-gap"
@@ -308,7 +308,7 @@ fi
 
 # 4.9: Verify re-installed plugin appears in list
 log_step "Phase 4.9: Verifying re-installed plugin in list"
-PLUGINS_AFTER_REINSTALL=$("$ACP" --server "http://localhost:$API_PORT" plugins 2>&1)
+PLUGINS_AFTER_REINSTALL=$("$GAP" --server "http://localhost:$API_PORT" plugins 2>&1)
 
 if echo "$PLUGINS_AFTER_REINSTALL" | grep -q "mikekelly/exa-gap"; then
     log_success "Re-installed plugin appears in list"
@@ -318,8 +318,8 @@ else
 fi
 
 # 4.10: Duplicate install rejection
-log_step "Phase 4.10: Testing duplicate install rejection with 'acp install mikekelly/test-acp'"
-DUPLICATE_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" install mikekelly/test-acp 2>&1 || true)
+log_step "Phase 4.10: Testing duplicate install rejection with 'gap install mikekelly/test-gap'"
+DUPLICATE_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" install mikekelly/test-gap 2>&1 || true)
 
 if echo "$DUPLICATE_OUTPUT" | grep -qi "already installed\|already exists\|conflict"; then
     log_success "Duplicate install correctly rejected"
@@ -336,11 +336,11 @@ log_step "Phase 5: Credential Management"
 echo "-----------------------------------"
 
 # 5.1: Set apiKey credential
-log_step "Phase 5.1: Setting credential with 'acp set mikekelly/test-acp:apiKey'"
+log_step "Phase 5.1: Setting credential with 'gap set mikekelly/test-gap:apiKey'"
 TEST_API_KEY="test-api-key-$(date +%s)"
 export GAP_CREDENTIAL_VALUE="$TEST_API_KEY"
 
-SET_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" set "mikekelly/test-acp:apiKey" 2>&1)
+SET_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" set "mikekelly/test-gap:apiKey" 2>&1)
 
 if echo "$SET_OUTPUT" | grep -qi "set successfully\|success"; then
     log_success "apiKey credential set successfully"
@@ -350,11 +350,11 @@ else
 fi
 
 # 5.2: Set clientId credential
-log_step "Phase 5.2: Setting credential with 'acp set mikekelly/test-acp:clientId'"
+log_step "Phase 5.2: Setting credential with 'gap set mikekelly/test-gap:clientId'"
 TEST_CLIENT_ID="test-client-id-$(date +%s)"
 export GAP_CREDENTIAL_VALUE="$TEST_CLIENT_ID"
 
-SET_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" set "mikekelly/test-acp:clientId" 2>&1)
+SET_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" set "mikekelly/test-gap:clientId" 2>&1)
 
 if echo "$SET_OUTPUT" | grep -qi "set successfully\|success"; then
     log_success "clientId credential set successfully"
@@ -373,7 +373,7 @@ echo "-----------------------------------"
 # 6.1: Create a token for proxy authentication
 log_step "Phase 6.1: Creating token for proxy test"
 PROXY_TOKEN_NAME="proxy-test-$(date +%s)"
-PROXY_TOKEN_OUTPUT=$("$ACP" --server "http://localhost:$API_PORT" token create "$PROXY_TOKEN_NAME" 2>&1)
+PROXY_TOKEN_OUTPUT=$("$GAP" --server "http://localhost:$API_PORT" token create "$PROXY_TOKEN_NAME" 2>&1)
 
 if echo "$PROXY_TOKEN_OUTPUT" | grep -q "Token created"; then
     PROXY_TOKEN=$(echo "$PROXY_TOKEN_OUTPUT" | grep "Token:" | awk '{print $2}')
@@ -384,7 +384,7 @@ else
 fi
 
 # 6.2: Test proxy with echo API
-# The test-acp plugin injects X-Api-Key and X-Client-Id headers
+# The test-gap plugin injects X-Api-Key and X-Client-Id headers
 # Echo API at echo.free.beeceptor.com returns the request details as JSON
 log_step "Phase 6.2: Testing proxy with echo.free.beeceptor.com"
 
@@ -443,10 +443,10 @@ log_info "====================================="
 echo ""
 echo "Summary:"
 echo "  ✓ Phase 1: Setup (build, start server, health check)"
-echo "  ✓ Phase 2: Initialization (acp init, gap status)"
-echo "  ✓ Phase 3: Token Management (acp token create/list/revoke)"
-echo "  ✓ Phase 4: Plugin Management (acp install/update/uninstall/reinstall, duplicate rejection)"
-echo "  ✓ Phase 5: Credential Management (acp set apiKey, clientId)"
+echo "  ✓ Phase 2: Initialization (gap init, gap status)"
+echo "  ✓ Phase 3: Token Management (gap token create/list/revoke)"
+echo "  ✓ Phase 4: Plugin Management (gap install/update/uninstall/reinstall, duplicate rejection)"
+echo "  ✓ Phase 5: Credential Management (gap set apiKey, clientId)"
 echo "  ✓ Phase 6: Proxy Test (echo.free.beeceptor.com header injection)"
 echo "  ✓ Phase 7: Cleanup (server stop, temp dir removal)"
 echo ""

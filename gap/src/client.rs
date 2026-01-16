@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-/// API client for ACP server
+/// API client for GAP server
 pub struct ApiClient {
     base_url: String,
     client: reqwest::Client,

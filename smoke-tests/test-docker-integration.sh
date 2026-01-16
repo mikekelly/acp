@@ -76,9 +76,9 @@ INIT_RESPONSE=$(curl -s -X POST "$GAP_SERVER_URL/init" \
 if echo "$INIT_RESPONSE" | grep -q '"ca_path"'; then
     log_pass "GAP initialized successfully (CA generated)"
 elif echo "$INIT_RESPONSE" | grep -q 'already initialized'; then
-    log_warn "ACP already initialized (expected if data persists)"
+    log_warn "GAP already initialized (expected if data persists)"
 else
-    log_fail "Failed to initialize ACP: $INIT_RESPONSE"
+    log_fail "Failed to initialize GAP: $INIT_RESPONSE"
 fi
 
 # Test 4: Check status after init
@@ -170,7 +170,7 @@ INSTALL_RESPONSE=$(curl -s -X POST "$GAP_SERVER_URL/plugins/install" \
     -H "Content-Type: application/json" \
     -d "{
         \"password_hash\": \"$(echo -n "$TEST_PASSWORD" | sha512sum | cut -d' ' -f1)\",
-        \"name\": \"mikekelly/exa-acp\"
+        \"name\": \"mikekelly/exa-gap\"
     }")
 
 if echo "$INSTALL_RESPONSE" | grep -q '"name"'; then

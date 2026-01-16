@@ -71,7 +71,7 @@ struct PluginsView: View {
                     .foregroundColor(.secondary)
 
                 HStack {
-                    TextField("owner/repo (e.g., mikekelly/exa-acp)", text: $newPluginRepo)
+                    TextField("owner/repo (e.g., mikekelly/exa-gap)", text: $newPluginRepo)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 300)
 

@@ -9,7 +9,7 @@ pub async fn run(server_url: &str, sans: &str) -> Result<()> {
     println!();
 
     // Get password from user
-    let password = read_password("Enter ACP password: ")?;
+    let password = read_password("Enter GAP password: ")?;
     let password_hash = hash_password(&password);
 
     // Parse SANs from comma-separated string
