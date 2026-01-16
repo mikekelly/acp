@@ -1,6 +1,6 @@
-# ACP macOS GUI
+# GAP macOS GUI
 
-Native macOS menu bar app for managing Agent Credential Proxy.
+Native macOS menu bar app for managing Generic Agent Proxy.
 
 ## Building
 
@@ -10,19 +10,19 @@ Requires Xcode command line tools (`xcode-select --install`).
 
 ```bash
 # Build release
-xcodebuild -project macos-gui/ACP.xcodeproj -scheme ACP -configuration Release \
+xcodebuild -project macos-gui/GAP.xcodeproj -scheme GAP -configuration Release \
   -derivedDataPath macos-gui/.build build
 
 # Run
-open macos-gui/.build/Build/Products/Release/ACP.app
+open macos-gui/.build/Build/Products/Release/GAP.app
 
 # Clean
-xcodebuild -project macos-gui/ACP.xcodeproj -scheme ACP clean
+xcodebuild -project macos-gui/GAP.xcodeproj -scheme GAP clean
 ```
 
 ### Build from Xcode
 
-Open `macos-gui/ACP.xcodeproj` and press Cmd+R.
+Open `macos-gui/GAP.xcodeproj` and press Cmd+R.
 
 ## Architecture
 
@@ -50,7 +50,7 @@ The GUI uses the **same Management API as the CLI** - no special code paths.
                                                   │
                                     ┌─────────────▼───────┐
                                     │  Management API     │
-                                    │  (acp-server:9080)  │
+                                    │  (gap-server:9080)  │
                                     │  Same as CLI uses   │
                                     └─────────────────────┘
 ```
@@ -59,12 +59,12 @@ The GUI uses the **same Management API as the CLI** - no special code paths.
 
 ```
 macos-gui/
-├── ACP.xcodeproj/           # Xcode project
-├── ACP/
-│   ├── ACPApp.swift         # App entry, MenuBarExtra setup
+├── GAP.xcodeproj/           # Xcode project
+├── GAP/
+│   ├── GAPApp.swift         # App entry, MenuBarExtra setup
 │   ├── AppState.swift       # Global state (password hash, data)
 │   ├── API/
-│   │   ├── ACPClient.swift  # URLSession wrapper for Management API
+│   │   ├── GAPClient.swift  # URLSession wrapper for Management API
 │   │   ├── Models.swift     # Codable structs for API responses
 │   │   └── PasswordHash.swift # SHA512 hashing (matches CLI)
 │   ├── Views/
@@ -73,7 +73,7 @@ macos-gui/
 │   │   └── PasswordPrompt.swift # Password entry dialog
 │   └── Resources/
 │       └── Assets.xcassets/ # App icons
-├── ACPTests/                # Unit tests
+├── GAPTests/                # Unit tests
 ├── .build/                  # Build output (gitignored)
 └── README.md
 ```
@@ -141,7 +141,7 @@ class TrustDelegate: NSObject, URLSessionDelegate {
 
 - macOS 13.0+
 - Xcode 15+ (or command line tools)
-- Running `acp-server` on localhost:9080
+- Running `gap-server` on localhost:9080
 
 ## Code Signing
 
@@ -150,7 +150,7 @@ For local development, the app signs with "Sign to Run Locally".
 For distribution, configure a Developer ID certificate in Xcode and run:
 
 ```bash
-xcodebuild -project macos-gui/ACP.xcodeproj -scheme ACP -configuration Release \
+xcodebuild -project macos-gui/GAP.xcodeproj -scheme GAP -configuration Release \
   CODE_SIGN_IDENTITY="Developer ID Application: Your Name" \
   -derivedDataPath macos-gui/.build build
 ```

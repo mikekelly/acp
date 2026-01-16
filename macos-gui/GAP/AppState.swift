@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// This class manages:
 /// - Password hash (in memory only)
-/// - Connection status to acp-server
+/// - Connection status to gap-server
 /// - Current data (plugins, tokens, activity)
 ///
 /// All authenticated operations require the password hash to be set.
@@ -19,7 +19,7 @@ class AppState: ObservableObject {
     @Published var tokens: [Token] = []
     @Published var activity: [ActivityEntry] = []
 
-    let client = ACPClient()
+    let client = GAPClient()
 
     /// Whether the user has successfully authenticated
     var isAuthenticated: Bool { passwordHash != nil }
@@ -27,7 +27,7 @@ class AppState: ObservableObject {
     /// Authenticate with a password by hashing and verifying against the API.
     ///
     /// - Parameter password: Plain text password
-    /// - Throws: ACPError if authentication fails
+    /// - Throws: GAPError if authentication fails
     func authenticate(password: String) async throws {
         let hash = hashPassword(password)
         // Verify by calling an authenticated endpoint
@@ -39,7 +39,7 @@ class AppState: ObservableObject {
 
     /// Refresh the list of installed plugins from the server.
     ///
-    /// - Throws: ACPError if the request fails
+    /// - Throws: GAPError if the request fails
     func refreshPlugins() async throws {
         guard let hash = passwordHash else { return }
         let response = try await client.getPlugins(passwordHash: hash)
@@ -48,7 +48,7 @@ class AppState: ObservableObject {
 
     /// Refresh the list of agent tokens from the server.
     ///
-    /// - Throws: ACPError if the request fails
+    /// - Throws: GAPError if the request fails
     func refreshTokens() async throws {
         guard let hash = passwordHash else { return }
         let response = try await client.getTokens(passwordHash: hash)
@@ -57,7 +57,7 @@ class AppState: ObservableObject {
 
     /// Refresh the activity log from the server.
     ///
-    /// - Throws: ACPError if the request fails
+    /// - Throws: GAPError if the request fails
     func refreshActivity() async throws {
         guard let hash = passwordHash else { return }
         let response = try await client.getActivity(passwordHash: hash)

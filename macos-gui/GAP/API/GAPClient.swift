@@ -1,9 +1,9 @@
 import Foundation
 
-// MARK: - ACPError
+// MARK: - GAPError
 
 /// Errors that can occur when communicating with the Management API.
-enum ACPError: Error, LocalizedError {
+enum GAPError: Error, LocalizedError {
     case invalidURL
     case networkError(Error)
     case httpError(Int, String)
@@ -26,17 +26,17 @@ enum ACPError: Error, LocalizedError {
     }
 }
 
-// MARK: - ACPClient
+// MARK: - GAPClient
 
-/// URLSession-based client for the ACP Management API.
+/// URLSession-based client for the GAP Management API.
 ///
 /// All authenticated endpoints require a password hash in the request body.
 /// The client trusts self-signed certificates from localhost to work with
-/// the ACP server's self-signed CA.
+/// the GAP server's self-signed CA.
 ///
 /// Example usage:
 /// ```swift
-/// let client = ACPClient()
+/// let client = GAPClient()
 /// let passwordHash = hashPassword("my-password")
 ///
 /// // Check server status (no auth required)
@@ -45,11 +45,11 @@ enum ACPError: Error, LocalizedError {
 /// // List plugins (auth required)
 /// let plugins = try await client.getPlugins(passwordHash: passwordHash)
 /// ```
-class ACPClient {
+class GAPClient {
     private let baseURL: URL
     private let session: URLSession
 
-    /// Initialize a new ACPClient.
+    /// Initialize a new GAPClient.
     ///
     /// - Parameter baseURL: The base URL for the Management API (default: https://localhost:9080)
     init(baseURL: URL = URL(string: "https://localhost:9080")!) {
@@ -70,7 +70,7 @@ class ACPClient {
     /// This endpoint does not require authentication.
     ///
     /// - Returns: StatusResponse with version, uptime, and port information
-    /// - Throws: ACPError if the request fails
+    /// - Throws: GAPError if the request fails
     func getStatus() async throws -> StatusResponse {
         return try await get("/status")
     }
@@ -81,7 +81,7 @@ class ACPClient {
     ///
     /// - Parameter passwordHash: SHA512 hash of the password
     /// - Returns: PluginsResponse containing array of installed plugins
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func getPlugins(passwordHash: String) async throws -> PluginsResponse {
         return try await post("/plugins", body: ["password_hash": passwordHash])
     }
@@ -92,7 +92,7 @@ class ACPClient {
     ///   - repo: GitHub repository in "owner/repo" format
     ///   - passwordHash: SHA512 hash of the password
     /// - Returns: PluginInstallResponse with installation status
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func installPlugin(repo: String, passwordHash: String) async throws -> PluginInstallResponse {
         return try await post("/plugins/install", body: [
             "name": repo,
@@ -106,10 +106,10 @@ class ACPClient {
     ///   - name: Plugin name (will be URL-encoded)
     ///   - passwordHash: SHA512 hash of the password
     /// - Returns: PluginInstallResponse with update status
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func updatePlugin(name: String, passwordHash: String) async throws -> PluginInstallResponse {
         guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            throw ACPError.invalidURL
+            throw GAPError.invalidURL
         }
         return try await post("/plugins/\(encodedName)/update", body: ["password_hash": passwordHash])
     }
@@ -120,10 +120,10 @@ class ACPClient {
     ///   - name: Plugin name (will be URL-encoded)
     ///   - passwordHash: SHA512 hash of the password
     /// - Returns: PluginUninstallResponse with uninstall status
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func uninstallPlugin(name: String, passwordHash: String) async throws -> PluginUninstallResponse {
         guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            throw ACPError.invalidURL
+            throw GAPError.invalidURL
         }
         return try await delete("/plugins/\(encodedName)", body: ["password_hash": passwordHash])
     }
@@ -134,7 +134,7 @@ class ACPClient {
     ///
     /// - Parameter passwordHash: SHA512 hash of the password
     /// - Returns: TokensResponse containing array of tokens
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func getTokens(passwordHash: String) async throws -> TokensResponse {
         return try await post("/tokens", body: ["password_hash": passwordHash])
     }
@@ -145,7 +145,7 @@ class ACPClient {
     ///   - name: Human-readable name for the token
     ///   - passwordHash: SHA512 hash of the password
     /// - Returns: TokenCreateResponse with the full token value (only shown once)
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func createToken(name: String, passwordHash: String) async throws -> TokenCreateResponse {
         return try await post("/tokens/create", body: [
             "name": name,
@@ -159,10 +159,10 @@ class ACPClient {
     ///   - id: Token ID to revoke
     ///   - passwordHash: SHA512 hash of the password
     /// - Returns: TokenRevokeResponse with revocation status
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func revokeToken(id: String, passwordHash: String) async throws -> TokenRevokeResponse {
         guard let encodedId = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            throw ACPError.invalidURL
+            throw GAPError.invalidURL
         }
         return try await delete("/tokens/\(encodedId)", body: ["password_hash": passwordHash])
     }
@@ -177,11 +177,11 @@ class ACPClient {
     ///   - value: Credential value
     ///   - passwordHash: SHA512 hash of the password
     /// - Returns: CredentialSetResponse with set status
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func setCredential(plugin: String, key: String, value: String, passwordHash: String) async throws -> CredentialSetResponse {
         guard let encodedPlugin = plugin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
               let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            throw ACPError.invalidURL
+            throw GAPError.invalidURL
         }
         return try await post("/credentials/\(encodedPlugin)/\(encodedKey)", body: [
             "value": value,
@@ -195,11 +195,11 @@ class ACPClient {
     ///   - plugin: Plugin name (will be URL-encoded)
     ///   - key: Credential key (will be URL-encoded)
     ///   - passwordHash: SHA512 hash of the password
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func deleteCredential(plugin: String, key: String, passwordHash: String) async throws {
         guard let encodedPlugin = plugin.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
               let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            throw ACPError.invalidURL
+            throw GAPError.invalidURL
         }
         // DELETE returns 204 No Content, so we just verify success without decoding a response
         let _: EmptyResponse = try await delete("/credentials/\(encodedPlugin)/\(encodedKey)", body: ["password_hash": passwordHash])
@@ -211,7 +211,7 @@ class ACPClient {
     ///
     /// - Parameter passwordHash: SHA512 hash of the password
     /// - Returns: ActivityResponse containing array of activity entries
-    /// - Throws: ACPError if the request fails or authentication fails
+    /// - Throws: GAPError if the request fails or authentication fails
     func getActivity(passwordHash: String) async throws -> ActivityResponse {
         return try await post("/activity", body: ["password_hash": passwordHash])
     }
@@ -222,10 +222,10 @@ class ACPClient {
     ///
     /// - Parameter path: API path (e.g., "/status")
     /// - Returns: Decoded response of type T
-    /// - Throws: ACPError if the request fails
+    /// - Throws: GAPError if the request fails
     private func get<T: Decodable>(_ path: String) async throws -> T {
         guard let url = URL(string: path, relativeTo: baseURL) else {
-            throw ACPError.invalidURL
+            throw GAPError.invalidURL
         }
 
         var request = URLRequest(url: url)
@@ -240,10 +240,10 @@ class ACPClient {
     ///   - path: API path (e.g., "/plugins")
     ///   - body: Dictionary to encode as JSON
     /// - Returns: Decoded response of type T
-    /// - Throws: ACPError if the request fails
+    /// - Throws: GAPError if the request fails
     private func post<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
         guard let url = URL(string: path, relativeTo: baseURL) else {
-            throw ACPError.invalidURL
+            throw GAPError.invalidURL
         }
 
         var request = URLRequest(url: url)
@@ -253,7 +253,7 @@ class ACPClient {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         } catch {
-            throw ACPError.networkError(error)
+            throw GAPError.networkError(error)
         }
 
         return try await performRequest(request)
@@ -265,10 +265,10 @@ class ACPClient {
     ///   - path: API path (e.g., "/plugins/name")
     ///   - body: Dictionary to encode as JSON
     /// - Returns: Decoded response of type T
-    /// - Throws: ACPError if the request fails
+    /// - Throws: GAPError if the request fails
     private func delete<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
         guard let url = URL(string: path, relativeTo: baseURL) else {
-            throw ACPError.invalidURL
+            throw GAPError.invalidURL
         }
 
         var request = URLRequest(url: url)
@@ -278,7 +278,7 @@ class ACPClient {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         } catch {
-            throw ACPError.networkError(error)
+            throw GAPError.networkError(error)
         }
 
         return try await performRequest(request)
@@ -288,12 +288,12 @@ class ACPClient {
     ///
     /// - Parameter request: URLRequest to execute
     /// - Returns: Decoded response of type T
-    /// - Throws: ACPError if the request fails
+    /// - Throws: GAPError if the request fails
     private func performRequest<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw ACPError.networkError(NSError(domain: "ACPClient", code: -1, userInfo: [
+            throw GAPError.networkError(NSError(domain: "GAPClient", code: -1, userInfo: [
                 NSLocalizedDescriptionKey: "Invalid response type"
             ]))
         }
@@ -301,11 +301,11 @@ class ACPClient {
         // Handle HTTP errors
         guard (200...299).contains(httpResponse.statusCode) else {
             if httpResponse.statusCode == 401 {
-                throw ACPError.unauthorized
+                throw GAPError.unauthorized
             }
 
             let message = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw ACPError.httpError(httpResponse.statusCode, message)
+            throw GAPError.httpError(httpResponse.statusCode, message)
         }
 
         // Handle empty responses (e.g., 204 No Content)
@@ -318,7 +318,7 @@ class ACPClient {
             let decoder = JSONDecoder()
             return try decoder.decode(T.self, from: data)
         } catch {
-            throw ACPError.decodingError(error)
+            throw GAPError.decodingError(error)
         }
     }
 }
@@ -327,7 +327,7 @@ class ACPClient {
 
 /// URLSessionDelegate that trusts self-signed certificates from localhost.
 ///
-/// The ACP server uses a self-signed CA for HTTPS. This delegate allows
+/// The GAP server uses a self-signed CA for HTTPS. This delegate allows
 /// the client to connect without certificate validation failures when
 /// connecting to localhost.
 ///

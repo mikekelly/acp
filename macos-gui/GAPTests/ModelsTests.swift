@@ -1,5 +1,5 @@
 import XCTest
-@testable import ACP
+@testable import GAP
 
 final class ModelsTests: XCTestCase {
 

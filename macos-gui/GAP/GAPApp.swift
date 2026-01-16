@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ACPApp: App {
+struct GAPApp: App {
     @StateObject private var appState = AppState()
 
     var body: some Scene {
@@ -12,7 +12,7 @@ struct ACPApp: App {
             Image(systemName: appState.isConnected ? "shield.checkered" : "shield.slash")
         }
 
-        Window("ACP", id: "main") {
+        Window("GAP", id: "main") {
             ContentView()
                 .environmentObject(appState)
         }

@@ -24,7 +24,7 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("Open ACP") {
+            Button("Open GAP") {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }

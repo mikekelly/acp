@@ -1,52 +1,52 @@
 import XCTest
-@testable import ACP
+@testable import GAP
 
-/// Tests for ACPClient - the API wrapper for the Management API.
+/// Tests for GAPClient - the API wrapper for the Management API.
 ///
 /// These tests verify that:
 /// 1. Error types are properly defined and have localized descriptions
 /// 2. URL encoding works correctly for plugin names with special characters
 /// 3. The client can construct requests with proper authentication
-/// 4. HTTP errors are mapped to appropriate ACPError types
+/// 4. HTTP errors are mapped to appropriate GAPError types
 ///
 /// Note: These are unit tests that test client logic without hitting real endpoints.
 /// Integration tests with a running server are separate.
-final class ACPClientTests: XCTestCase {
+final class GAPClientTests: XCTestCase {
 
     // MARK: - Error Type Tests
 
-    /// Test that ACPError.invalidURL provides a meaningful error description.
+    /// Test that GAPError.invalidURL provides a meaningful error description.
     func testInvalidURLErrorDescription() {
-        let error = ACPError.invalidURL
+        let error = GAPError.invalidURL
         XCTAssertNotNil(error.errorDescription, "invalidURL should have a description")
         XCTAssertTrue(error.errorDescription!.contains("URL"), "Error should mention URL")
     }
 
-    /// Test that ACPError.networkError wraps underlying errors properly.
+    /// Test that GAPError.networkError wraps underlying errors properly.
     func testNetworkErrorDescription() {
         let underlyingError = NSError(domain: "test", code: 123, userInfo: [NSLocalizedDescriptionKey: "Connection failed"])
-        let error = ACPError.networkError(underlyingError)
+        let error = GAPError.networkError(underlyingError)
         XCTAssertNotNil(error.errorDescription, "networkError should have a description")
         XCTAssertTrue(error.errorDescription!.contains("network"), "Error should mention network")
     }
 
-    /// Test that ACPError.httpError includes status code and message.
+    /// Test that GAPError.httpError includes status code and message.
     func testHTTPErrorDescription() {
-        let error = ACPError.httpError(404, "Not Found")
+        let error = GAPError.httpError(404, "Not Found")
         XCTAssertNotNil(error.errorDescription, "httpError should have a description")
         XCTAssertTrue(error.errorDescription!.contains("404"), "Error should include status code")
     }
 
-    /// Test that ACPError.decodingError wraps decoding failures.
+    /// Test that GAPError.decodingError wraps decoding failures.
     func testDecodingErrorDescription() {
         let underlyingError = NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON"])
-        let error = ACPError.decodingError(underlyingError)
+        let error = GAPError.decodingError(underlyingError)
         XCTAssertNotNil(error.errorDescription, "decodingError should have a description")
     }
 
-    /// Test that ACPError.unauthorized provides a clear message.
+    /// Test that GAPError.unauthorized provides a clear message.
     func testUnauthorizedErrorDescription() {
-        let error = ACPError.unauthorized
+        let error = GAPError.unauthorized
         XCTAssertNotNil(error.errorDescription, "unauthorized should have a description")
         XCTAssertTrue(error.errorDescription!.contains("password") || error.errorDescription!.contains("unauthorized"),
                      "Error should mention password or unauthorized")
@@ -68,16 +68,16 @@ final class ACPClientTests: XCTestCase {
 
     // MARK: - Client Initialization Tests
 
-    /// Test that ACPClient can be initialized with default URL.
+    /// Test that GAPClient can be initialized with default URL.
     func testClientInitializationDefault() {
-        let client = ACPClient()
+        let client = GAPClient()
         XCTAssertNotNil(client, "Client should initialize with default URL")
     }
 
-    /// Test that ACPClient can be initialized with custom URL.
+    /// Test that GAPClient can be initialized with custom URL.
     func testClientInitializationCustomURL() {
         let customURL = URL(string: "https://localhost:8443")!
-        let client = ACPClient(baseURL: customURL)
+        let client = GAPClient(baseURL: customURL)
         XCTAssertNotNil(client, "Client should initialize with custom URL")
     }
 
@@ -95,17 +95,17 @@ final class ACPClientTests: XCTestCase {
     }
 }
 
-/// Tests for ACPClient endpoint methods.
+/// Tests for GAPClient endpoint methods.
 ///
 /// These tests verify that the client has methods for all required endpoints
 /// and that they have the correct signatures.
-final class ACPClientEndpointTests: XCTestCase {
+final class GAPClientEndpointTests: XCTestCase {
 
-    var client: ACPClient!
+    var client: GAPClient!
 
     override func setUp() {
         super.setUp()
-        client = ACPClient()
+        client = GAPClient()
     }
 
     override func tearDown() {
@@ -123,7 +123,7 @@ final class ACPClientEndpointTests: XCTestCase {
         do {
             let _: StatusResponse = try await client.getStatus()
             XCTFail("Expected method to not be implemented yet")
-        } catch ACPError.invalidURL {
+        } catch GAPError.invalidURL {
             // Expected during RED phase - implementation doesn't exist
         } catch {
             // Also acceptable - any error means we're in RED phase
@@ -262,7 +262,7 @@ final class ACPClientEndpointTests: XCTestCase {
 /// Mock tests for TrustDelegate behavior.
 ///
 /// TrustDelegate must accept self-signed certificates from localhost
-/// to work with the ACP server's self-signed CA.
+/// to work with the GAP server's self-signed CA.
 final class TrustDelegateTests: XCTestCase {
 
     /// Test that TrustDelegate is defined and can be instantiated.

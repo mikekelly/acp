@@ -7,10 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1000001000000000000001 /* ACPApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002000000000000001 /* ACPApp.swift */; };
+		A1000001000000000000001 /* GAPApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002000000000000001 /* GAPApp.swift */; };
 		A1000003000000000000001 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004000000000000001 /* AppState.swift */; };
 		A1000005000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000006000000000000001 /* Assets.xcassets */; };
-		A1000020000000000000001 /* ACPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000021000000000000001 /* ACPClient.swift */; };
+		A1000020000000000000001 /* GAPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000021000000000000001 /* GAPClient.swift */; };
 		A1000022000000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000023000000000000001 /* Models.swift */; };
 		A1000024000000000000001 /* PasswordHash.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000025000000000000001 /* PasswordHash.swift */; };
 		A1000026000000000000001 /* PasswordPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000027000000000000001 /* PasswordPrompt.swift */; };
@@ -19,12 +19,12 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A1000000000000000000001 /* ACP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ACP.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A1000002000000000000001 /* ACPApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ACPApp.swift; sourceTree = "<group>"; };
+		A1000000000000000000001 /* GAP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GAP.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000002000000000000001 /* GAPApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GAPApp.swift; sourceTree = "<group>"; };
 		A1000004000000000000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		A1000006000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000007000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A1000021000000000000001 /* ACPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ACPClient.swift; sourceTree = "<group>"; };
+		A1000021000000000000001 /* GAPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GAPClient.swift; sourceTree = "<group>"; };
 		A1000023000000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		A1000025000000000000001 /* PasswordHash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordHash.swift; sourceTree = "<group>"; };
 		A1000027000000000000001 /* PasswordPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordPrompt.swift; sourceTree = "<group>"; };
@@ -46,28 +46,28 @@
 		A100000B000000000000001 = {
 			isa = PBXGroup;
 			children = (
-				A100000C000000000000001 /* ACP */,
+				A100000C000000000000001 /* GAP */,
 				A100000D000000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		A100000C000000000000001 /* ACP */ = {
+		A100000C000000000000001 /* GAP */ = {
 			isa = PBXGroup;
 			children = (
-				A1000002000000000000001 /* ACPApp.swift */,
+				A1000002000000000000001 /* GAPApp.swift */,
 				A1000004000000000000001 /* AppState.swift */,
 				A1000008000000000000001 /* API */,
 				A1000009000000000000001 /* Views */,
 				A100000E000000000000001 /* Resources */,
 				A1000007000000000000001 /* Info.plist */,
 			);
-			path = ACP;
+			path = GAP;
 			sourceTree = "<group>";
 		};
 		A1000008000000000000001 /* API */ = {
 			isa = PBXGroup;
 			children = (
-				A1000021000000000000001 /* ACPClient.swift */,
+				A1000021000000000000001 /* GAPClient.swift */,
 				A1000023000000000000001 /* Models.swift */,
 				A1000025000000000000001 /* PasswordHash.swift */,
 			);
@@ -87,7 +87,7 @@
 		A100000D000000000000001 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A1000000000000000000001 /* ACP.app */,
+				A1000000000000000000001 /* GAP.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -103,9 +103,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A100000F000000000000001 /* ACP */ = {
+		A100000F000000000000001 /* GAP */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A1000010000000000000001 /* Build configuration list for PBXNativeTarget "ACP" */;
+			buildConfigurationList = A1000010000000000000001 /* Build configuration list for PBXNativeTarget "GAP" */;
 			buildPhases = (
 				A1000011000000000000001 /* Sources */,
 				A100000A000000000000001 /* Frameworks */,
@@ -115,9 +115,9 @@
 			);
 			dependencies = (
 			);
-			name = ACP;
-			productName = ACP;
-			productReference = A1000000000000000000001 /* ACP.app */;
+			name = GAP;
+			productName = GAP;
+			productReference = A1000000000000000000001 /* GAP.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -135,7 +135,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A1000014000000000000001 /* Build configuration list for PBXProject "ACP" */;
+			buildConfigurationList = A1000014000000000000001 /* Build configuration list for PBXProject "GAP" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -148,7 +148,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A100000F000000000000001 /* ACP */,
+				A100000F000000000000001 /* GAP */,
 			);
 		};
 /* End PBXProject section */
@@ -169,9 +169,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1000001000000000000001 /* ACPApp.swift in Sources */,
+				A1000001000000000000001 /* GAPApp.swift in Sources */,
 				A1000003000000000000001 /* AppState.swift in Sources */,
-				A1000020000000000000001 /* ACPClient.swift in Sources */,
+				A1000020000000000000001 /* GAPClient.swift in Sources */,
 				A1000022000000000000001 /* Models.swift in Sources */,
 				A1000024000000000000001 /* PasswordHash.swift in Sources */,
 				A1000026000000000000001 /* PasswordPrompt.swift in Sources */,
@@ -314,7 +314,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ACP/Info.plist;
+				INFOPLIST_FILE = GAP/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -322,7 +322,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.acp.ACP;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gap.GAP;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -342,7 +342,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ACP/Info.plist;
+				INFOPLIST_FILE = GAP/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -350,7 +350,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.acp.ACP;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gap.GAP;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -360,7 +360,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1000010000000000000001 /* Build configuration list for PBXNativeTarget "ACP" */ = {
+		A1000010000000000000001 /* Build configuration list for PBXNativeTarget "GAP" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A1000017000000000000001 /* Debug */,
@@ -369,7 +369,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A1000014000000000000001 /* Build configuration list for PBXProject "ACP" */ = {
+		A1000014000000000000001 /* Build configuration list for PBXProject "GAP" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A1000015000000000000001 /* Debug */,

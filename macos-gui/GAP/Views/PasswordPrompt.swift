@@ -3,7 +3,7 @@ import SwiftUI
 /// Password prompt view shown when the user is not authenticated.
 ///
 /// This view presents a secure text field for password entry and authenticates
-/// against the ACP Management API by hashing the password and verifying it
+/// against the GAP Management API by hashing the password and verifying it
 /// with an authenticated endpoint.
 struct PasswordPrompt: View {
     @EnvironmentObject var appState: AppState
@@ -17,7 +17,7 @@ struct PasswordPrompt: View {
                 .font(.system(size: 48))
                 .foregroundColor(.accentColor)
 
-            Text("Enter ACP Password")
+            Text("Enter GAP Password")
                 .font(.headline)
 
             SecureField("Password", text: $password)
@@ -58,7 +58,7 @@ struct PasswordPrompt: View {
         Task {
             do {
                 try await appState.authenticate(password: password)
-            } catch let error as ACPError {
+            } catch let error as GAPError {
                 errorMessage = error.localizedDescription
             } catch {
                 errorMessage = error.localizedDescription
