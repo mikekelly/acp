@@ -1,4 +1,4 @@
-# Multi-stage build for GAP (Generic Agent Proxy)
+# Multi-stage build for GAP (Gated Agent Proxy)
 # Produces a minimal runtime image with gap and gap-server binaries
 
 # Build stage

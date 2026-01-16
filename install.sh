@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GAP (Generic Agent Proxy) Installation Script
+# GAP (Gated Agent Proxy) Installation Script
 # Supports macOS and Linux
 # Usage: curl -fsSL https://example.com/install.sh | bash
 #        or: ./install.sh [--prefix /custom/path] [--build-from-source]

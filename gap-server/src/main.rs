@@ -1,4 +1,4 @@
-//! GAP Server - Generic Agent Proxy daemon
+//! GAP Server - Gated Agent Proxy daemon
 //!
 //! This binary runs the proxy server and management API.
 //! It handles:
@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "gap-server")]
-#[command(author, version, about = "Generic Agent Proxy Server", long_about = None)]
+#[command(author, version, about = "Gated Agent Proxy Server", long_about = None)]
 struct Args {
     #[command(subcommand)]
     command: Option<Command>,

@@ -1,6 +1,6 @@
 # GAP macOS GUI
 
-Native macOS menu bar app for managing Generic Agent Proxy.
+Native macOS menu bar app for managing Gated Agent Proxy.
 
 ## Building
 

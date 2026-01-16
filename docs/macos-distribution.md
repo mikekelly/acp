@@ -146,7 +146,7 @@ homebrew-gap/
 ### Formula Template
 ```ruby
 class GapServer < Formula
-  desc "Generic Agent Proxy - secure credential management for AI agents"
+  desc "Gated Agent Proxy - secure credential management for AI agents"
   homepage "https://github.com/mikekelly/gap"
   version "0.1.0"
   license "MIT"

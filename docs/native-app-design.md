@@ -1,4 +1,4 @@
-# GAP - Generic Agent Proxy
+# GAP - Gated Agent Proxy
 
 A credential proxy that lets AI agents make authenticated API calls without exposing secrets.
 

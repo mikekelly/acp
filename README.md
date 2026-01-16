@@ -1,4 +1,4 @@
-# GAP (Generic Agent Proxy)
+# GAP (Gated Agent Proxy)
 
 **Give AI agents secure access to your APIs - without sharing your credentials.**
 
@@ -103,7 +103,7 @@ sudo chmod 700 /var/lib/gap
 ```bash
 sudo tee /etc/systemd/system/gap-server.service > /dev/null <<EOF
 [Unit]
-Description=Generic Agent Proxy
+Description=Gated Agent Proxy
 After=network.target
 
 [Service]

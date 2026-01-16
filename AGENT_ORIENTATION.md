@@ -1,7 +1,7 @@
 # Agent Orientation
 
 ## What This Is
-GAP (Generic Agent Proxy) lets AI agents access APIs without seeing your credentials. Agents route requests through the proxy with a token; GAP injects stored credentials and forwards to the API. The agent never sees the actual API keys.
+GAP (Gated Agent Proxy) lets AI agents access APIs without seeing your credentials. Agents route requests through the proxy with a token; GAP injects stored credentials and forwards to the API. The agent never sees the actual API keys.
 
 **Security model:**
 - Credentials stored in OS keychain (macOS) or under dedicated service user (Linux)
