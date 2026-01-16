@@ -49,6 +49,8 @@ brew services start gap
 gap init
 ```
 
+> **Note for oh-my-zsh users:** If you have `gap` aliased to `git apply`, use `gap-cli` instead - it's installed as an alias automatically.
+
 Install a GAP plugin for a given service (eg. Exa) and set credentials:
 ```bash
 # Install a plugin (e.g. Exa search API)
