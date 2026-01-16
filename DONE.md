@@ -2,6 +2,19 @@
 
 Shipped work - archive periodically.
 
+## Rust Crate Rename: ACP → GAP (2026-01-16)
+Renamed all Rust crates from ACP (Agent Credential Proxy) to GAP (Gated Agent Proxy) to avoid naming conflict with Agent Client Protocol (agentclientprotocol.com). Binary names updated: `acp` → `gap`, `acp-server` → `gap-server`.
+
+**Changes:**
+- Directories renamed via git mv: acp/ → gap/, acp-server/ → gap-server/, acp-lib/ → gap-lib/
+- All Cargo.toml files updated with new crate names and workspace dependencies
+- All imports updated: `use acp_lib::` → `use gap_lib::`
+- Internal JS runtime prefixes updated: `__acp_native_*` → `__gap_native_*`, `__acp_logs` → `__gap_logs`
+- Build verified: cargo build succeeds
+- Tests verified: 40 tests passing
+
+**Commit:** 745a9ba
+
 ## HTTPS Management API (2026-01-12)
 Implemented TLS encryption for CLI → management API communication. Management API now serves HTTPS with certificates signed by the existing CA infrastructure. Includes support for configurable Subject Alternative Names (SANs) at init time and live certificate rotation without server restart.
 
