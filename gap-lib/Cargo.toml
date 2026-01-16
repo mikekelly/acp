@@ -1,5 +1,5 @@
 [package]
-name = "acp-lib"
+name = "gap-lib"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

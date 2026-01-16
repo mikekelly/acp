@@ -7,7 +7,7 @@
 //! - Token management
 //! - Activity monitoring
 
-use acp_lib::{AgentToken, Registry, storage::SecretStore};
+use gap_lib::{AgentToken, Registry, storage::SecretStore};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     async_trait,
@@ -349,7 +349,7 @@ async fn init(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<InitResponse>, (StatusCode, String)> {
-    use acp_lib::tls::CertificateAuthority;
+    use gap_lib::tls::CertificateAuthority;
     use argon2::password_hash::{rand_core::OsRng, SaltString};
     use argon2::{Argon2, PasswordHasher};
 
@@ -439,8 +439,8 @@ async fn init(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate management certificate: {}", e)))?;
 
     // Convert DER to PEM for storage
-    let mgmt_cert_pem = acp_lib::tls::der_to_pem(&mgmt_cert_der, "CERTIFICATE");
-    let mgmt_key_pem = acp_lib::tls::der_to_pem(&mgmt_key_der, "PRIVATE KEY");
+    let mgmt_cert_pem = gap_lib::tls::der_to_pem(&mgmt_cert_der, "CERTIFICATE");
+    let mgmt_key_pem = gap_lib::tls::der_to_pem(&mgmt_key_der, "PRIVATE KEY");
 
     // Store management cert and key
     state.store.set("mgmt:cert", mgmt_cert_pem.as_bytes()).await
@@ -648,8 +648,8 @@ fn parse_plugin_name(name: &str) -> std::result::Result<String, (StatusCode, Str
 async fn clone_and_validate_plugin(
     state: &ApiState,
     plugin_name: &str,
-) -> std::result::Result<(acp_lib::types::ACPPlugin, String), (StatusCode, String)> {
-    use acp_lib::plugin_runtime::PluginRuntime;
+) -> std::result::Result<(gap_lib::types::ACPPlugin, String), (StatusCode, String)> {
+    use gap_lib::plugin_runtime::PluginRuntime;
     use git2::{build::RepoBuilder, Cred, FetchOptions, RemoteCallbacks};
     use tempfile::tempdir;
 
@@ -709,7 +709,7 @@ async fn clone_and_validate_plugin(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to store plugin: {}", e)))?;
 
     // Add plugin to registry with commit SHA
-    use acp_lib::PluginEntry;
+    use gap_lib::PluginEntry;
     let plugin_entry = PluginEntry {
         name: plugin.name.clone(),
         hosts: plugin.match_patterns.clone(),
@@ -785,7 +785,7 @@ async fn create_token(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<TokenResponse>, (StatusCode, String)> {
-    use acp_lib::registry::TokenMetadata;
+    use gap_lib::registry::TokenMetadata;
 
     let req: CreateTokenRequest = verify_auth(&state, &body).await?;
 
@@ -907,7 +907,7 @@ async fn rotate_management_cert(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<Json<RotateManagementCertResponse>, (StatusCode, String)> {
-    use acp_lib::tls::CertificateAuthority;
+    use gap_lib::tls::CertificateAuthority;
 
     // Verify authentication and extract request data
     let req: RotateManagementCertRequest = verify_auth(&state, &body).await?;
@@ -939,8 +939,8 @@ async fn rotate_management_cert(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate management certificate: {}", e)))?;
 
     // Convert DER to PEM for storage
-    let mgmt_cert_pem = acp_lib::tls::der_to_pem(&mgmt_cert_der, "CERTIFICATE");
-    let mgmt_key_pem = acp_lib::tls::der_to_pem(&mgmt_key_der, "PRIVATE KEY");
+    let mgmt_cert_pem = gap_lib::tls::der_to_pem(&mgmt_cert_der, "CERTIFICATE");
+    let mgmt_key_pem = gap_lib::tls::der_to_pem(&mgmt_key_der, "PRIVATE KEY");
 
     // Store new management cert and key
     state.store.set("mgmt:cert", mgmt_cert_pem.as_bytes()).await
@@ -976,7 +976,7 @@ async fn rotate_management_cert(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_lib::storage::{FileStore, SecretStore};
+    use gap_lib::storage::{FileStore, SecretStore};
     use axum::body::Body;
     use axum::http::Request;
     use serial_test::serial;
@@ -1207,7 +1207,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_init_endpoint() {
-        use acp_lib::tls::CertificateAuthority;
+        use gap_lib::tls::CertificateAuthority;
 
         // Use temp directory to avoid test isolation issues with macOS Keychain
         let temp_dir = tempfile::tempdir().expect("create temp dir");
@@ -1529,7 +1529,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_api_uses_shared_store() {
-        use acp_lib::storage::FileStore;
+        use gap_lib::storage::FileStore;
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
@@ -1588,7 +1588,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_set_credential_updates_registry() {
-        use acp_lib::registry::CredentialEntry;
+        use gap_lib::registry::CredentialEntry;
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
@@ -1639,7 +1639,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_delete_credential_updates_registry() {
-        use acp_lib::registry::CredentialEntry;
+        use gap_lib::registry::CredentialEntry;
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
@@ -1692,7 +1692,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_set_credential_twice_no_duplicates() {
-        use acp_lib::registry::CredentialEntry;
+        use gap_lib::registry::CredentialEntry;
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
@@ -1763,7 +1763,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_list_tokens_uses_registry() {
-        use acp_lib::registry::TokenEntry;
+        use gap_lib::registry::TokenEntry;
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
@@ -1876,7 +1876,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_delete_token_removes_from_registry() {
-        use acp_lib::registry::TokenEntry;
+        use gap_lib::registry::TokenEntry;
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
@@ -1934,7 +1934,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_init_endpoint_with_management_sans() {
-        use acp_lib::tls::CertificateAuthority;
+        use gap_lib::tls::CertificateAuthority;
 
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
@@ -1988,7 +1988,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_init_endpoint_with_default_management_sans() {
-        use acp_lib::tls::CertificateAuthority;
+        use gap_lib::tls::CertificateAuthority;
 
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         std::env::set_var("ACP_DATA_DIR", temp_dir.path());
@@ -2042,7 +2042,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_rotate_management_cert_endpoint() {
-        use acp_lib::tls::CertificateAuthority;
+        use gap_lib::tls::CertificateAuthority;
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
@@ -2059,8 +2059,8 @@ mod tests {
         // Pre-create initial management cert
         let initial_sans = vec!["DNS:localhost".to_string()];
         let (initial_cert_der, initial_key_der) = ca.sign_server_cert(&initial_sans).expect("sign initial cert");
-        let initial_cert_pem = acp_lib::tls::der_to_pem(&initial_cert_der, "CERTIFICATE");
-        let initial_key_pem = acp_lib::tls::der_to_pem(&initial_key_der, "PRIVATE KEY");
+        let initial_cert_pem = gap_lib::tls::der_to_pem(&initial_cert_der, "CERTIFICATE");
+        let initial_key_pem = gap_lib::tls::der_to_pem(&initial_key_der, "PRIVATE KEY");
         store.set("mgmt:cert", initial_cert_pem.as_bytes()).await.expect("store initial cert");
         store.set("mgmt:key", initial_key_pem.as_bytes()).await.expect("store initial key");
 
@@ -2146,7 +2146,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_rotate_management_cert_hot_swap() {
-        use acp_lib::tls::CertificateAuthority;
+        use gap_lib::tls::CertificateAuthority;
         use argon2::password_hash::{rand_core::OsRng, SaltString};
         use argon2::{Argon2, PasswordHasher};
 
@@ -2163,8 +2163,8 @@ mod tests {
         // Pre-create initial management cert
         let initial_sans = vec!["DNS:localhost".to_string()];
         let (initial_cert_der, initial_key_der) = ca.sign_server_cert(&initial_sans).expect("sign initial cert");
-        let initial_cert_pem = acp_lib::tls::der_to_pem(&initial_cert_der, "CERTIFICATE");
-        let initial_key_pem = acp_lib::tls::der_to_pem(&initial_key_der, "PRIVATE KEY");
+        let initial_cert_pem = gap_lib::tls::der_to_pem(&initial_cert_der, "CERTIFICATE");
+        let initial_key_pem = gap_lib::tls::der_to_pem(&initial_key_der, "PRIVATE KEY");
         store.set("mgmt:cert", initial_cert_pem.as_bytes()).await.expect("store initial cert");
         store.set("mgmt:key", initial_key_pem.as_bytes()).await.expect("store initial key");
 

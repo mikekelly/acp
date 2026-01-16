@@ -9,7 +9,7 @@
 //! These tests use actual binaries and real HTTP endpoints to verify
 //! the full integration across CLI, API, and storage layers.
 
-use acp_lib::storage::{FileStore, SecretStore};
+use gap_lib::storage::{FileStore, SecretStore};
 use reqwest::{Client, StatusCode};
 use serde_json::json;
 use sha2::{Digest, Sha512};
@@ -223,7 +223,7 @@ async fn test_server_initialization_flow() {
 /// API endpoint is not yet fully implemented in Phase 8.
 #[tokio::test]
 async fn test_plugin_installation_flow() {
-    use acp_lib::plugin_runtime::PluginRuntime;
+    use gap_lib::plugin_runtime::PluginRuntime;
 
     let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let store = FileStore::new(temp_dir.path().to_path_buf())

@@ -1,5 +1,5 @@
 [package]
-name = "acp"
+name = "gap"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,11 +7,11 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "acp"
+name = "gap"
 path = "src/main.rs"
 
 [dependencies]
-acp-lib.workspace = true
+gap-lib.workspace = true
 clap.workspace = true
 tokio.workspace = true
 anyhow.workspace = true

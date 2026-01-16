@@ -2,9 +2,9 @@
 //!
 //! Tests the full pipeline: FileStore -> PluginRuntime -> Transform execution
 
-use acp_lib::plugin_runtime::PluginRuntime;
-use acp_lib::storage::{FileStore, SecretStore};
-use acp_lib::types::{ACPCredentials, ACPRequest};
+use gap_lib::plugin_runtime::PluginRuntime;
+use gap_lib::storage::{FileStore, SecretStore};
+use gap_lib::types::{ACPCredentials, ACPRequest};
 
 /// Integration test: Load test-api plugin and execute a transform
 ///

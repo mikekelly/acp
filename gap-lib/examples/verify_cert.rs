@@ -1,4 +1,4 @@
-use acp_lib::tls::CertificateAuthority;
+use gap_lib::tls::CertificateAuthority;
 use std::fs;
 use std::process::Command;
 

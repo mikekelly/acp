@@ -7,10 +7,10 @@
 //! 4. Execute plugin transform
 //! 5. Serialize back to HTTP
 
-use acp_lib::plugin_runtime::PluginRuntime;
-use acp_lib::registry::{PluginEntry, Registry};
-use acp_lib::storage::{FileStore, SecretStore};
-use acp_lib::types::{ACPCredentials, ACPRequest};
+use gap_lib::plugin_runtime::PluginRuntime;
+use gap_lib::registry::{PluginEntry, Registry};
+use gap_lib::storage::{FileStore, SecretStore};
+use gap_lib::types::{ACPCredentials, ACPRequest};
 use std::sync::Arc;
 
 /// Test HTTP request parsing
@@ -223,9 +223,9 @@ async fn test_proxy_plugin_execution_flow() {
     tokio::fs::remove_dir_all(temp_dir).await.ok();
 }
 
-// Use the actual implementations from acp_lib
-use acp_lib::{parse_http_request, serialize_http_request, find_matching_plugin};
-use acp_lib::proxy_transforms::parse_and_transform;
+// Use the actual implementations from gap_lib
+use gap_lib::{parse_http_request, serialize_http_request, find_matching_plugin};
+use gap_lib::proxy_transforms::parse_and_transform;
 
 /// Test the complete proxy transform pipeline
 #[tokio::test]

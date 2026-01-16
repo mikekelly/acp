@@ -1,5 +1,5 @@
 [workspace]
-members = ["acp", "acp-server", "acp-lib"]
+members = ["gap", "gap-server", "gap-lib"]
 resolver = "2"
 
 [workspace.package]
@@ -34,4 +34,4 @@ tempfile = "3.13"
 dirs = "5.0"
 
 # Our own crates
-acp-lib = { path = "acp-lib" }
+gap-lib = { path = "gap-lib" }

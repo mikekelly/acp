@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn test_client_with_ca_cert() {
         // Generate a real CA certificate for testing
-        let ca = acp_lib::tls::CertificateAuthority::generate().expect("Failed to create CA");
+        let ca = gap_lib::tls::CertificateAuthority::generate().expect("Failed to create CA");
         let ca_pem = ca.ca_cert_pem();
 
         // This should create a client with custom CA cert

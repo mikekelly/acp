@@ -12,7 +12,7 @@ pub mod api;
 #[cfg(target_os = "macos")]
 pub mod launchd;
 
-use acp_lib::{storage, tls::CertificateAuthority, Registry, Config, ProxyServer};
+use gap_lib::{storage, tls::CertificateAuthority, Registry, Config, ProxyServer};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -217,7 +217,7 @@ async fn load_or_generate_mgmt_cert(
     store: &dyn storage::SecretStore,
     ca: &CertificateAuthority,
 ) -> anyhow::Result<()> {
-    use acp_lib::tls::der_to_pem;
+    use gap_lib::tls::der_to_pem;
 
     const MGMT_CERT_KEY: &str = "mgmt:cert";
     const MGMT_KEY_KEY: &str = "mgmt:key";
@@ -256,7 +256,7 @@ async fn load_or_generate_mgmt_cert(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_lib::storage::{FileStore, SecretStore};
+    use gap_lib::storage::{FileStore, SecretStore};
 
     #[test]
     fn test_args_parsing() {

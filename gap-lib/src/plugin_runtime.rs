@@ -66,40 +66,40 @@ impl PluginRuntime {
         var ACP = {
             crypto: {
                 sha256: function(data) {
-                    return __acp_native_sha256(data);
+                    return __gap_native_sha256(data);
                 },
                 sha256Hex: function(data) {
-                    return __acp_native_sha256_hex(data);
+                    return __gap_native_sha256_hex(data);
                 },
                 hmac: function(key, data, encoding) {
-                    return __acp_native_hmac(key, data, encoding || 'hex');
+                    return __gap_native_hmac(key, data, encoding || 'hex');
                 }
             },
             util: {
                 base64: function(data, decode) {
                     if (decode) {
-                        return __acp_native_base64_decode(data);
+                        return __gap_native_base64_decode(data);
                     }
-                    return __acp_native_base64_encode(data);
+                    return __gap_native_base64_encode(data);
                 },
                 hex: function(data, decode) {
                     if (decode) {
-                        return __acp_native_hex_decode(data);
+                        return __gap_native_hex_decode(data);
                     }
-                    return __acp_native_hex_encode(data);
+                    return __gap_native_hex_encode(data);
                 },
                 now: function() {
-                    return __acp_native_now();
+                    return __gap_native_now();
                 },
                 isoDate: function(timestamp) {
-                    return __acp_native_iso_date(timestamp);
+                    return __gap_native_iso_date(timestamp);
                 },
                 amzDate: function(timestamp) {
-                    return __acp_native_amz_date(timestamp);
+                    return __gap_native_amz_date(timestamp);
                 }
             },
             log: function(msg) {
-                __acp_native_log(msg);
+                __gap_native_log(msg);
             }
         };
         "#;
@@ -124,7 +124,7 @@ impl PluginRuntime {
             bytes_to_js_array(&result, context)
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_sha256"),
+            JsString::from("__gap_native_sha256"),
             1,
             sha256_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register sha256: {}", e)))?;
@@ -141,7 +141,7 @@ impl PluginRuntime {
             Ok(JsValue::from(JsString::from(hex::encode(result))))
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_sha256_hex"),
+            JsString::from("__gap_native_sha256_hex"),
             1,
             sha256_hex_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register sha256Hex: {}", e)))?;
@@ -172,7 +172,7 @@ impl PluginRuntime {
             }
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_hmac"),
+            JsString::from("__gap_native_hmac"),
             3,
             hmac_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register hmac: {}", e)))?;
@@ -191,7 +191,7 @@ impl PluginRuntime {
             Ok(JsValue::from(JsString::from(BASE64_STANDARD.encode(&bytes))))
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_base64_encode"),
+            JsString::from("__gap_native_base64_encode"),
             1,
             base64_encode_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register base64 encode: {}", e)))?;
@@ -213,7 +213,7 @@ impl PluginRuntime {
             bytes_to_js_array(&bytes, context)
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_base64_decode"),
+            JsString::from("__gap_native_base64_decode"),
             1,
             base64_decode_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register base64 decode: {}", e)))?;
@@ -225,7 +225,7 @@ impl PluginRuntime {
             Ok(JsValue::from(JsString::from(hex::encode(&bytes))))
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_hex_encode"),
+            JsString::from("__gap_native_hex_encode"),
             1,
             hex_encode_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register hex encode: {}", e)))?;
@@ -247,7 +247,7 @@ impl PluginRuntime {
             bytes_to_js_array(&bytes, context)
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_hex_decode"),
+            JsString::from("__gap_native_hex_decode"),
             1,
             hex_decode_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register hex decode: {}", e)))?;
@@ -258,7 +258,7 @@ impl PluginRuntime {
             Ok(JsValue::from(now))
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_now"),
+            JsString::from("__gap_native_now"),
             0,
             now_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register now: {}", e)))?;
@@ -275,7 +275,7 @@ impl PluginRuntime {
             Ok(JsValue::from(JsString::from(dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())))
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_iso_date"),
+            JsString::from("__gap_native_iso_date"),
             1,
             iso_date_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register isoDate: {}", e)))?;
@@ -292,7 +292,7 @@ impl PluginRuntime {
             Ok(JsValue::from(JsString::from(dt.format("%Y%m%dT%H%M%SZ").to_string())))
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_amz_date"),
+            JsString::from("__gap_native_amz_date"),
             1,
             amz_date_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register amzDate: {}", e)))?;
@@ -304,8 +304,8 @@ impl PluginRuntime {
     fn register_log_native(context: &mut Context) -> Result<()> {
         // Create a JavaScript array to store logs
         let setup_log_code = r#"
-        var __acp_logs = [];
-        function __acp_native_log(msg) {
+        var __gap_logs = [];
+        function __gap_native_log(msg) {
             // Convert to string
             var str;
             if (typeof msg === 'string') {
@@ -326,7 +326,7 @@ impl PluginRuntime {
                     str = String(msg);
                 }
             }
-            __acp_logs.push(str);
+            __gap_logs.push(str);
         }
         "#;
 
@@ -338,9 +338,9 @@ impl PluginRuntime {
 
     /// Get all captured log messages
     pub fn get_logs(&mut self) -> Vec<String> {
-        // Access the JavaScript __acp_logs array
+        // Access the JavaScript __gap_logs array
         let global = self.context.global_object();
-        let logs_value = global.get(JsString::from("__acp_logs"), &mut self.context)
+        let logs_value = global.get(JsString::from("__gap_logs"), &mut self.context)
             .unwrap_or(JsValue::undefined());
 
         if let Some(logs_obj) = logs_value.as_object() {
@@ -366,8 +366,8 @@ impl PluginRuntime {
 
     /// Clear all captured log messages
     pub fn clear_logs(&mut self) {
-        // Clear the JavaScript __acp_logs array
-        let _ = self.context.eval(Source::from_bytes("__acp_logs = [];"));
+        // Clear the JavaScript __gap_logs array
+        let _ = self.context.eval(Source::from_bytes("__gap_logs = [];"));
     }
 
     /// Set up TextEncoder and TextDecoder
@@ -386,7 +386,7 @@ impl PluginRuntime {
             bytes_to_js_array(s.as_bytes(), context)
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_text_encode"),
+            JsString::from("__gap_native_text_encode"),
             1,
             encode_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register text encode: {}", e)))?;
@@ -401,7 +401,7 @@ impl PluginRuntime {
             Ok(JsValue::from(JsString::from(s)))
         });
         context.register_global_builtin_callable(
-            JsString::from("__acp_native_text_decode"),
+            JsString::from("__gap_native_text_decode"),
             1,
             decode_fn
         ).map_err(|e| AcpError::plugin(format!("Failed to register text decode: {}", e)))?;
@@ -410,12 +410,12 @@ impl PluginRuntime {
         let text_code = r#"
         function TextEncoder() {}
         TextEncoder.prototype.encode = function(str) {
-            return __acp_native_text_encode(str);
+            return __gap_native_text_encode(str);
         };
 
         function TextDecoder() {}
         TextDecoder.prototype.decode = function(bytes) {
-            return __acp_native_text_decode(bytes);
+            return __gap_native_text_decode(bytes);
         };
         "#;
         context.eval(Source::from_bytes(text_code))
