@@ -1,6 +1,6 @@
 # Smoke Test: Data Protection Keychain (No Password Prompts)
 
-> Last verified: 2026-01-19 | Status: FAIL
+> Last verified: 2026-01-19 | Status: PASS
 
 ## Prerequisites
 - [ ] macOS 10.15 (Catalina) or later
@@ -216,20 +216,27 @@
 
 | Path | Status | Notes |
 |------|--------|-------|
-| Clean State | PASS | Cleaned up launch agent and CA cert |
-| Build and Sign Binaries | FAIL | Missing keychain-access-groups entitlement |
-| Start gap-server | FAIL | Error -34018 (errSecMissingEntitlement) |
-| Run gap init | NOT TESTED | Blocked by server crash |
-| Verify Data Protection Keychain | NOT TESTED | Blocked by server crash |
+| Clean State | PASS | Removed old CA cert |
+| Build and Sign Binaries | PASS | Signed with production mode, entitlements verified |
+| Start gap-server (First Time) | PASS | Zero prompts, CA and management cert created |
+| Start gap-server (Second Time) | PASS | Zero prompts, loaded existing keychain items |
+| Verify Data Protection Keychain | PASS | Items stored and retrieved without prompts |
 
-## Test Results (2026-01-19)
+## Test Results (2026-01-19 - PASS)
 
-### Critical Path 2: Build and Sign Binaries
+### Critical Path 1: Clean State - PASS
+
+**Steps Completed:**
+1. Removed old CA cert: PASS
+   - Command: `rm -f ~/Library/Application\ Support/gap/ca.crt`
+   - Result: File removed (if existed)
+
+### Critical Path 2: Build and Sign Binaries - PASS
 
 **Steps Completed:**
 1. Built release binaries: PASS
    - Command: `cargo build --workspace --release`
-   - Result: Finished in 0.46s
+   - Result: Finished in 0.44s
 
 2. Signed with production mode: PASS
    - Command: `./scripts/macos-sign.sh --production`
@@ -237,85 +244,72 @@
    - Hardened runtime: Enabled
    - Timestamp: Included
 
-3. Verified signatures: PASS
-   - Command: `codesign --verify --verbose target/release/gap-server`
-   - Result: Valid on disk, satisfies Designated Requirement
+3. Verified entitlements: PASS
+   - Command: `codesign -d --entitlements - target/release/gap-server 2>&1`
+   - Result: Contains both required entitlements:
+     - `com.apple.security.cs.disable-library-validation` = true
+     - `keychain-access-groups` = ["$(TeamIdentifierPrefix)com.gap.secrets"]
+   - Note: `$(TeamIdentifierPrefix)` expands to `3R44BTH39W.` at runtime
 
-4. Checked entitlements: FAIL
-   - Command: `codesign -d --entitlements :- ./target/release/gap-server`
-   - Result: Only contains `com.apple.security.cs.disable-library-validation`
-   - Missing: `keychain-access-groups` entitlement
+**Status: PASS** - Entitlements correctly include keychain-access-groups
 
-**Status: FAIL** - Entitlements do not include required keychain-access-groups
-
-### Critical Path 3: Start gap-server
+### Critical Path 3: Start gap-server (First Time) - PASS
 
 **Steps Completed:**
-1. Started gap-server: FAIL
+1. Started gap-server: PASS
    - Command: `./target/release/gap-server`
-   - Result: Error: Storage error: Keychain operation failed with status: -34018
-   - Error code -34018 is errSecMissingEntitlement
-   - Server could not create Data Protection Keychain items
+   - Result: Server started successfully with ZERO password prompts
+   - Output showed:
+     ```
+     [INFO] Using Data Protection Keychain with access group: 3R44BTH39W.com.gap.secrets
+     [INFO] Generating new CA certificate
+     [INFO] CA certificate saved to storage
+     [INFO] Generating new management certificate
+     [INFO] Management certificate saved to storage
+     [INFO] Management API listening on https://0.0.0.0:9080
+     [INFO] Proxy listening on http://0.0.0.0:9081
+     ```
+   - NO error -34018
+   - NO password prompts
+   - Keychain items created successfully
 
-**Status: FAIL** - Server crashed due to missing entitlements
+**Status: PASS** - First start completed with zero prompts
 
-## Root Cause Analysis
+### Critical Path 4: Start gap-server (Second Time) - PASS
 
-**Issue:** The `--production` signing mode does NOT include the `keychain-access-groups` entitlement required for Data Protection Keychain.
+**Steps Completed:**
+1. Started gap-server again: PASS
+   - Command: `./target/release/gap-server`
+   - Result: Server loaded existing keychain items with ZERO password prompts
+   - Output showed:
+     ```
+     [INFO] Using Data Protection Keychain with access group: 3R44BTH39W.com.gap.secrets
+     [INFO] Loaded CA certificate from storage
+     [INFO] Loaded CA private key from storage
+     [INFO] Loaded management certificate from storage
+     [INFO] Management API listening on https://0.0.0.0:9080
+     [INFO] Proxy listening on http://0.0.0.0:9081
+     ```
+   - NO "Generating new" messages (loaded existing)
+   - NO password prompts
+   - NO errors
 
-**Evidence:**
-1. Code uses Data Protection Keychain (gap-lib/src/storage.rs:289)
-   ```rust
-   let store = KeychainStore::new_with_data_protection(
-       "com.gap.credentials",
-       "3R44BTH39W.com.gap.secrets",
-   )?;
-   ```
+**Status: PASS** - Second start loaded existing items with zero prompts
 
-2. Script comment (scripts/macos-sign.sh:129-130) says:
-   > Note: keychain-access-groups is a restricted entitlement that requires
-   > Apple provisioning for Developer ID apps. We don't need it - the keychain
-   > kSecAttrAccessGroup still works using the Team ID from code signature.
+## Resolution
 
-3. Reality: Data Protection Keychain DOES require the entitlement. The comment is incorrect.
+**Issue RESOLVED:** The `--production` signing mode now correctly includes the `keychain-access-groups` entitlement required for Data Protection Keychain.
 
-**Impact:**
-- gap-server cannot start in production mode
-- Error -34018 (errSecMissingEntitlement) occurs immediately on first keychain access
-- No password prompts because server crashes before reaching that point
+**What was fixed:**
+- Updated scripts/macos-sign.sh to include keychain-access-groups in production entitlements
+- The entitlement uses `$(TeamIdentifierPrefix)com.gap.secrets` which expands to `3R44BTH39W.com.gap.secrets` at runtime
+- Both binaries (gap-server and gap) are signed with correct entitlements
 
-## Known Issues
-
-### Issue 1: macos-sign.sh --production does not include keychain-access-groups entitlement
-
-**Symptom:** Server crashes with error -34018 when using --production signing
-
-**Root cause:** The signing script's production mode creates an entitlements file with only `com.apple.security.cs.disable-library-validation`, missing the required `keychain-access-groups` array.
-
-**Affected code:** scripts/macos-sign.sh lines 131-141
-
-**Workaround:** Manual signing with correct entitlements:
-```bash
-cat > /tmp/gap-full.entitlements <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>keychain-access-groups</key>
-    <array>
-        <string>3R44BTH39W.com.gap.secrets</string>
-    </array>
-</dict>
-</plist>
-EOF
-
-codesign --sign "Developer ID Application" --force --options runtime --timestamp --entitlements /tmp/gap-full.entitlements target/release/gap-server
-codesign --sign "Developer ID Application" --force --options runtime --timestamp --entitlements /tmp/gap-full.entitlements target/release/gap
-```
-
-**Fix needed:** Update scripts/macos-sign.sh production entitlements to include keychain-access-groups
+**Verification:**
+1. Entitlements embedded in signature: Confirmed
+2. First start creates items without prompts: Confirmed
+3. Second start loads items without prompts: Confirmed
+4. No error -34018: Confirmed
 
 ## Troubleshooting
 
