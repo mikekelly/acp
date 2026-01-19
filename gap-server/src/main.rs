@@ -67,17 +67,15 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    // Handle subcommands
+    // Handle subcommands (macOS only)
+    #[cfg(target_os = "macos")]
     if let Some(command) = args.command {
         return match command {
-            #[cfg(target_os = "macos")]
             Command::Status => {
                 launchd::status();
                 Ok(())
             }
-            #[cfg(target_os = "macos")]
             Command::Install => launchd::install(),
-            #[cfg(target_os = "macos")]
             Command::Uninstall { purge } => launchd::uninstall(purge),
         };
     }
