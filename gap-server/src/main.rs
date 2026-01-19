@@ -190,12 +190,12 @@ async fn load_or_generate_ca(store: &dyn storage::SecretStore) -> anyhow::Result
     const CA_KEY_KEY: &str = "ca:key";
 
     // Try to load from storage
-    match (store.get(CA_CERT_KEY).await?, store.get(CA_KEY_KEY).await?) {
+    let ca = match (store.get(CA_CERT_KEY).await?, store.get(CA_KEY_KEY).await?) {
         (Some(cert_pem), Some(key_pem)) => {
             let cert_pem_str = String::from_utf8(cert_pem)?;
             let key_pem_str = String::from_utf8(key_pem)?;
             tracing::info!("Loaded CA from storage");
-            Ok(CertificateAuthority::from_pem(&cert_pem_str, &key_pem_str)?)
+            CertificateAuthority::from_pem(&cert_pem_str, &key_pem_str)?
         }
         _ => {
             // Generate new CA
@@ -207,9 +207,19 @@ async fn load_or_generate_ca(store: &dyn storage::SecretStore) -> anyhow::Result
             store.set(CA_KEY_KEY, ca.ca_key_pem().as_bytes()).await?;
             tracing::info!("CA certificate saved to storage");
 
-            Ok(ca)
+            ca
         }
+    };
+
+    // Export CA cert to well-known filesystem location
+    let ca_path = gap_lib::ca_cert_path();
+    if let Some(parent) = ca_path.parent() {
+        std::fs::create_dir_all(parent)?;
     }
+    std::fs::write(&ca_path, ca.ca_cert_pem())?;
+    tracing::info!("CA certificate exported to {}", ca_path.display());
+
+    Ok(ca)
 }
 
 /// Load management certificate from storage or generate a new one
@@ -360,5 +370,29 @@ mod tests {
     fn test_uninstall_subcommand_with_purge_flag() {
         let args = Args::parse_from(["gap-server", "uninstall", "--purge"]);
         assert!(matches!(args.command, Some(Command::Uninstall { purge: true })));
+    }
+
+    #[tokio::test]
+    async fn test_load_or_generate_ca_exports_to_filesystem() {
+        use std::fs;
+
+        // Create a temporary store
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = FileStore::new(temp_dir.path().to_path_buf()).await.unwrap();
+
+        // Set up a temporary HOME directory for the test
+        let temp_home = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", temp_home.path());
+
+        // Load or generate CA - this should export the cert to the filesystem
+        let ca = load_or_generate_ca(&store).await.unwrap();
+
+        // Verify the CA cert was exported to the well-known path
+        let ca_path = gap_lib::ca_cert_path();
+        assert!(ca_path.exists(), "CA certificate should be exported to {}", ca_path.display());
+
+        // Verify the content matches what the CA has
+        let exported_content = fs::read_to_string(&ca_path).unwrap();
+        assert_eq!(exported_content, ca.ca_cert_pem());
     }
 }
