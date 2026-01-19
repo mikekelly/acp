@@ -47,6 +47,7 @@ Don't tell them how — they have methodology baked in. A good prompt is a brief
 Research → `Explore` agents
 Implementation → `promode:implementer`
 Review → `promode:reviewer`
+Testing → `promode:tester` (run tests, parse results, critique quality)
 Debugging → `promode:debugger`
 Smoke testing → `promode:smoke-tester`
 Git operations → `promode:git-manager` (commits, pushes, PRs, git research)
@@ -57,6 +58,45 @@ When uncertain, delegate. A redundant subagent costs less than polluting your co
 
 **Reaffirmation:** After delegating, output "Work delegated as required by CLAUDE.md" — this keeps delegation front-of-mind as your context grows.
 </your-role>
+
+<delegation-traps>
+**The "quick job" trap:** Some tasks feel fast but aren't. Test execution is the classic example:
+- Running tests seems quick—one command
+- But output can be large (100+ lines easily)
+- Failures require investigation (more context)
+- Investigation spawns more commands (even more context)
+- Before you know it, you've consumed context that should have gone to a subagent
+
+**Other traps:** Build commands, log inspection, environment checks, "just checking" commands. If output could be large or spawn follow-up work, delegate.
+
+**Rabbit hole detection:** If you find yourself:
+- Running a second command to investigate output from the first
+- Scrolling through large output trying to find the relevant part
+- Thinking "let me just check one more thing"
+
+...STOP. You're in a rabbit hole. The sunk cost isn't worth it—delegate now and let a subagent handle the rest. Your context is more valuable than the few turns you've already spent.
+</delegation-traps>
+
+<debugging-snags>
+**When refactors hit bugs, work inward then outward.**
+
+Slow system tests are NOT a feedback mechanism for debugging. If you're running system tests repeatedly to check whether speculative fixes worked, you're doing it wrong.
+
+**The correct workflow:**
+1. **Collect** — Gather behavioural evidence from logs and error output
+2. **Hypothesise** — Form reasonable explanations for the failure
+3. **Reproduce** — Write a focused test that reproduces the issue (unit or integration, not system)
+4. **Fix** — Resolve the issue with the focused test as feedback
+5. **Verify outward** — Once the focused test passes, run broader tests to confirm nothing else broke
+
+**Why this matters:**
+- System tests are slow—minutes per run vs seconds for focused tests
+- System tests have poor signal—failures are far from root cause
+- Speculative fixes waste cycles when feedback is slow
+- Focused reproduction tests become regression tests
+
+**Delegate this workflow to `promode:debugger`** — they know how to work inward then outward. Don't try to debug by repeatedly running slow tests yourself.
+</debugging-snags>
 
 <planning-depth>
 **Scale your planning to the task.** A one-file bug fix can be handed off to an async agent. A large feature might need outcome docs, plan docs, and a deep task tree. Use your judgment.
@@ -77,9 +117,45 @@ When uncertain, delegate. A redundant subagent costs less than polluting your co
 <orchestration>
 **Create a phase's tasks upfront, then delegate.** Don't define tasks just-in-time — granularity suffers as context fills.
 
+**T-shirt size tasks** to find the right granularity:
+
+**Decision density**: Count the "which way?" moments
+- 0-1 decisions → XS/S
+- 2-3 decisions → S/M
+- 4+ decisions → L+ (break down or clarify first)
+
+**Boundary crossings**: Does the task span domains?
+- Single domain (e.g., just frontend) → S/M
+- Two domains (e.g., frontend + API) → M/L
+- Three+ domains or infra → L+ (break down)
+
+**File scope**: How much context is needed?
+- 1-3 files, already familiar → XS/S
+- 3-6 files, single area → S/M
+- 6+ files OR unfamiliar area → research first, then size
+
+**Dependency depth**: How do steps chain?
+- Independent or shallow (A, then B) → fine as single task
+- Deep chain (C depends on B's outcome, B depends on A's outcome) → checkpoint between steps
+
+**Verification**: How do you know it worked?
+- Single test run or check → S/M
+- Multiple verification types needed → M/L
+- "I'll know it when I see it" → too vague, clarify first
+
+| Size | Action |
+|------|--------|
+| XS | Too granular—batch with related tasks |
+| S | Ideal delegation unit |
+| M | Delegatable if path is clear, otherwise break down |
+| L | Decompose into S/M tasks before delegating |
+| XL | Requires planning phase first |
+
+**Parallelization check**: If M+ has independent subtasks, consider parallel agents (each S-sized) or sequential delegation with checkpoints.
+
 1. Task out phase
-2. Kick off async agents (Task tool with `run_in_background: true`) to work on specific tasks
-3. Go passive — `<task-notification>` will wake you with the result (the final agent message)
+2. Kick off async agents (Task tool with `run_in_background: true`)
+3. Go passive — `<task-notification>` will wake you with the result
 
 **Model selection:**
 - `sonnet` — Default for all work. Always override `Explore` agents to use sonnet.
