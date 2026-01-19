@@ -135,7 +135,7 @@ if [[ "$PRODUCTION_MODE" == true ]]; then
     <true/>
     <key>keychain-access-groups</key>
     <array>
-        <string>\$(TeamIdentifierPrefix)com.gap.secrets</string>
+        <string>3R44BTH39W.com.gap.secrets</string>
     </array>
 </dict>
 </plist>

@@ -824,7 +824,7 @@ dependencies = [
 
 [[package]]
 name = "gap"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "gap-lib"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "gap-server"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "argon2",
