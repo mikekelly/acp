@@ -124,7 +124,6 @@ if [[ "$PRODUCTION_MODE" == true ]]; then
 
     # Create entitlements file for production signing
     # - disable-library-validation: allows loading libraries with different Team IDs (like Homebrew's OpenSSL)
-    # - keychain-access-groups: required for Data Protection Keychain access with kSecAttrAccessGroup
     ENTITLEMENTS_FILE=$(mktemp)
     cat > "$ENTITLEMENTS_FILE" <<ENTITLEMENTS
 <?xml version="1.0" encoding="UTF-8"?>
@@ -133,10 +132,6 @@ if [[ "$PRODUCTION_MODE" == true ]]; then
 <dict>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
-    <key>keychain-access-groups</key>
-    <array>
-        <string>3R44BTH39W.com.gap.secrets</string>
-    </array>
 </dict>
 </plist>
 ENTITLEMENTS
