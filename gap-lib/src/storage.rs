@@ -271,17 +271,27 @@ pub async fn create_store(data_dir: Option<PathBuf>) -> Result<Box<dyn SecretSto
             // Platform-specific default
             #[cfg(target_os = "macos")]
             {
-                // In test mode, use a test-specific namespace to avoid interfering with production keychain
+                // In test mode, use traditional keychain (Data Protection requires signed binary)
                 #[cfg(test)]
-                let service_name = format!("com.gap.test.{}", std::process::id());
-                #[cfg(not(test))]
-                let service_name = "com.gap.credentials";
+                {
+                    let service_name = format!("com.gap.test.{}", std::process::id());
+                    let store = KeychainStore::new_with_access_group(
+                        service_name,
+                        "3R44BTH39W.com.gap.secrets",
+                    )?;
+                    return Ok(Box::new(store));
+                }
 
-                let store = KeychainStore::new_with_access_group(
-                    service_name,
-                    "3R44BTH39W.com.gap.secrets",
-                )?;
-                Ok(Box::new(store))
+                // In production, use Data Protection Keychain for prompt-free access
+                #[cfg(not(test))]
+                {
+                    let service_name = "com.gap.credentials";
+                    let store = KeychainStore::new_with_data_protection(
+                        service_name,
+                        "3R44BTH39W.com.gap.secrets",
+                    )?;
+                    return Ok(Box::new(store));
+                }
             }
 
             #[cfg(not(target_os = "macos"))]
