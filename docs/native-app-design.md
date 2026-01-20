@@ -515,7 +515,7 @@ Save this token - it won't be shown again.
   GAP_TOKEN=gap_a1b2c3d4e5f6...
 
 Configure your agent:
-  export HTTPS_PROXY=http://127.0.0.1:9443
+  export HTTPS_PROXY=https://127.0.0.1:9443
   export NODE_EXTRA_CA_CERTS=~/.config/gap/ca.crt
   export GAP_TOKEN=<token above>
 ```
@@ -687,8 +687,8 @@ services:
   my-agent:
     image: your-agent-image
     environment:
-      - HTTP_PROXY=http://gap-server:9443
-      - HTTPS_PROXY=http://gap-server:9443
+      - HTTP_PROXY=https://gap-server:9443
+      - HTTPS_PROXY=https://gap-server:9443
     networks:
       - agent-network
     depends_on:
@@ -910,7 +910,8 @@ cargo build --release
 ./target/release/gap token create test-agent
 
 # Test with curl through proxy
-curl -x http://127.0.0.1:9443 \
+curl -x https://127.0.0.1:9443 \
+     --proxy-cacert ~/.config/gap/ca.crt \
      --cacert ~/.config/gap/ca.crt \
      --proxy-header "Proxy-Authorization: Bearer <token>" \
      -H "Content-Type: application/json" \

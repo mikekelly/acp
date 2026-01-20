@@ -32,6 +32,8 @@ pub struct ProxyServer {
     registry: Arc<Registry>,
     /// TLS connector for upstream connections
     upstream_connector: TlsConnector,
+    /// TLS acceptor for proxy connections (HTTPS on port 9443)
+    proxy_acceptor: TlsAcceptor,
 }
 
 impl ProxyServer {
@@ -53,12 +55,38 @@ impl ProxyServer {
 
         let upstream_connector = TlsConnector::from(Arc::new(tls_config));
 
+        // Generate localhost certificate for the proxy's TLS
+        // Use "localhost" as the hostname since the proxy listens on 127.0.0.1
+        let (cert_der, key_der) = ca
+            .sign_for_hostname("localhost", None)
+            .map_err(|e| GapError::tls(format!("Failed to sign localhost certificate: {}", e)))?;
+
+        // Convert DER bytes to rustls types
+        // Include CA cert in chain so clients can verify
+        let certs = vec![
+            CertificateDer::from(cert_der),
+            CertificateDer::from(ca.ca_cert_der()),
+        ];
+
+        // Parse private key from DER
+        let key_der = rustls::pki_types::PrivateKeyDer::try_from(key_der)
+            .map_err(|e| GapError::tls(format!("Failed to parse key DER: {:?}", e)))?;
+
+        // Build server config for proxy TLS
+        let proxy_server_config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key_der)
+            .map_err(|e| GapError::tls(format!("Failed to create proxy server config: {}", e)))?;
+
+        let proxy_acceptor = TlsAcceptor::from(Arc::new(proxy_server_config));
+
         Ok(Self {
             port,
             ca: Arc::new(ca),
             store,
             registry,
             upstream_connector,
+            proxy_acceptor,
         })
     }
 
@@ -116,9 +144,10 @@ impl ProxyServer {
             let store = Arc::clone(&self.store);
             let registry = Arc::clone(&self.registry);
             let upstream_connector = self.upstream_connector.clone();
+            let proxy_acceptor = self.proxy_acceptor.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = handle_connection(stream, ca, store, registry, upstream_connector).await {
+                if let Err(e) = handle_connection(stream, ca, store, registry, upstream_connector, proxy_acceptor).await {
                     error!("Connection error: {}", e);
                 }
             });
@@ -133,9 +162,18 @@ async fn handle_connection(
     store: Arc<dyn SecretStore>,
     registry: Arc<Registry>,
     upstream_connector: TlsConnector,
+    proxy_acceptor: TlsAcceptor,
 ) -> Result<()> {
+    // First, accept the TLS connection from the proxy client
+    let tls_stream = proxy_acceptor
+        .accept(stream)
+        .await
+        .map_err(|e| GapError::tls(format!("Failed to accept proxy TLS: {}", e)))?;
+
+    debug!("Proxy TLS connection established");
+
     // Read the CONNECT request
-    let mut reader = BufReader::new(stream);
+    let mut reader = BufReader::new(tls_stream);
     let mut request_line = String::new();
     reader
         .read_line(&mut request_line)
@@ -271,11 +309,14 @@ fn parse_host_port(target: &str) -> Result<(String, u16)> {
 }
 
 /// Accept agent-side TLS connection with dynamic cert
-async fn accept_agent_tls(
-    stream: TcpStream,
+async fn accept_agent_tls<S>(
+    stream: S,
     hostname: &str,
     ca: &CertificateAuthority,
-) -> Result<tokio_rustls::server::TlsStream<TcpStream>> {
+) -> Result<tokio_rustls::server::TlsStream<S>>
+where
+    S: AsyncReadExt + AsyncWriteExt + Unpin,
+{
     // Generate certificate for this hostname (returns DER format)
     let (cert_der, key_der) = ca
         .sign_for_hostname(hostname, None)
@@ -580,5 +621,26 @@ mod tests {
 
         let proxy = ProxyServer::new_from_vec_async(9443, ca, tokens).await;
         assert!(proxy.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_proxy_tls_acceptor_creation() {
+        // Install default crypto provider for rustls (required for TLS operations)
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+        // Create CA
+        let ca = CertificateAuthority::generate().expect("CA generation failed");
+
+        // Create token
+        let token = AgentToken::new("Test Agent");
+
+        // Create proxy server - this should successfully create the TLS acceptor
+        let proxy = ProxyServer::new_from_vec_async(19443, ca, vec![token])
+            .await
+            .expect("create proxy with TLS acceptor");
+
+        // Verify the proxy was created successfully
+        // The fact that this doesn't panic means the TLS acceptor was created successfully
+        assert_eq!(proxy.port, 19443);
     }
 }

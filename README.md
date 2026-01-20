@@ -161,7 +161,8 @@ gap token create my-agent
 #### 6. Use the proxy
 
 ```bash
-curl -x http://localhost:9443 \
+curl -x https://localhost:9443 \
+     --proxy-cacert ~/.config/gap/ca.crt \
      --cacert ~/.config/gap/ca.crt \
      --proxy-header "Proxy-Authorization: Bearer gap_xxxxxxxxxxxx" \
      -H "Content-Type: application/json" \
@@ -207,8 +208,8 @@ services:
   my-agent:
     image: your-agent-image
     environment:
-      - HTTP_PROXY=http://gap-server:9443
-      - HTTPS_PROXY=http://gap-server:9443
+      - HTTP_PROXY=https://gap-server:9443
+      - HTTPS_PROXY=https://gap-server:9443
     networks:
       - agent-network
 
@@ -277,7 +278,8 @@ Point your agent's HTTP traffic through GAP:
 # Your agent needs to trust the CA certificate at ~/.config/gap/ca.crt
 
 # Example with curl:
-curl --proxy http://127.0.0.1:9443 \
+curl --proxy https://127.0.0.1:9443 \
+     --proxy-cacert ~/.config/gap/ca.crt \
      --cacert ~/.config/gap/ca.crt \
      --proxy-header "Proxy-Authorization: Bearer gap_19ba8e89e25" \
      -X POST https://api.exa.ai/search \
@@ -348,7 +350,7 @@ With direct API keys: credentials in chat logs, sent to LLM providers, vulnerabl
 
 **Q: Can I use this with Claude Code, Cursor, or other IDEs?**
 
-Yes, if the IDE supports HTTP proxy configuration. Point it to `http://localhost:9443` and provide the CA certificate at `~/.config/gap/ca.crt`. Each IDE has different proxy settings - check their documentation.
+Yes, if the IDE supports HTTPS proxy configuration. Point it to `https://localhost:9443` and provide the CA certificate at `~/.config/gap/ca.crt`. Each IDE has different proxy settings - check their documentation.
 
 **Q: Do I need to trust the agent framework?**
 
