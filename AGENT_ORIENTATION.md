@@ -66,6 +66,38 @@ For comprehensive details, see:
 - **[docs/reference/architecture.md](docs/reference/architecture.md)** - System design, patterns, TLS infrastructure, proxy pipeline, Management API, CLI, plugin management, installation
 - **[docs/reference/gotchas.md](docs/reference/gotchas.md)** - Complete list of 30+ implementation caveats with explanations
 
+## macOS App Signing & Deployment
+
+**Location:** `macos-app/` directory
+
+**Scripts:**
+- `build-dmg.sh` - Builds Swift app, bundles gap-server as Login Item helper, creates unsigned DMG
+- `sign-and-package.sh` - Signs with Developer ID, embeds provisioning profiles, creates signed DMG
+- `setup-app-provisioning.sh` - Downloads provisioning profiles from Apple Developer portal
+
+**Build & Deploy Process:**
+```bash
+cd macos-app
+./build-dmg.sh              # Build unsigned app
+./sign-and-package.sh       # Sign (requires manual keychain unlock)
+# Then manually: mount DMG, drag to /Applications, unmount
+```
+
+**Manual Steps Required (cannot be automated by agents):**
+1. **Keychain unlock** - macOS will prompt for login password when accessing Developer ID certificate
+2. **Notarization** (if enabled) - Requires Apple ID credentials
+3. **Provisioning profiles** - Must be downloaded from Apple Developer portal first (`setup-app-provisioning.sh`)
+
+**Testing signed builds:**
+- Data Protection Keychain only works with signed binaries (unsigned gets `-34018` error)
+- Use `--data-dir` flag with unsigned dev builds to bypass keychain
+- Smoke test: `./smoke-tests/test-https-proxy.sh`
+
+**Common issues:**
+- `-34018` error: Binary not signed, or entitlements don't match provisioning profile
+- Keychain prompt loop: Access group in code must match `keychain-access-groups` entitlement
+- LibreSSL TLS error: macOS system curl incompatible with TLS 1.3 PQ key exchange; use homebrew curl
+
 ## Quick Type Reference
 
 Key types you'll use frequently:
