@@ -55,6 +55,8 @@ cat > "build/${APP_NAME}.app/Contents/Info.plist" <<EOF
     <true/>
     <key>LSUIElement</key>
     <true/>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
 EOF
@@ -102,10 +104,21 @@ if [ -d "GAP-App" ]; then
     }
 fi
 
-# 7. Copy main app binary
+# 7. Copy main app binary and resources
 if [ -f "GAP-App/.build/release/GAP" ] && [ -z "$USE_SHELL_FALLBACK" ]; then
     echo "Using Swift main app"
     cp "GAP-App/.build/release/GAP" "build/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+
+    # Compile asset catalog if it exists
+    if [ -d "GAP-App/Sources/Assets.xcassets" ]; then
+        echo "Compiling app icon assets..."
+        xcrun actool "GAP-App/Sources/Assets.xcassets" \
+            --compile "build/${APP_NAME}.app/Contents/Resources" \
+            --platform macosx \
+            --minimum-deployment-target 13.0 \
+            --app-icon AppIcon \
+            --output-partial-info-plist /tmp/assetcatalog_generated_info.plist
+    fi
 else
     echo "Using shell script fallback for main app"
     cat > "build/${APP_NAME}.app/Contents/MacOS/${APP_NAME}" <<'MAINAPP'
