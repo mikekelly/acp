@@ -40,22 +40,22 @@ Agents **opt in** by routing requests through the proxy. You give them a proxy t
 
 ### macOS Quick Start
 
-Install and setup GAP:
+**Download the native app (recommended):**
+
+1. Download `GAP.dmg` from the [latest GitHub release](https://github.com/mikekelly/gap/releases/latest)
+2. Open the DMG and drag GAP to Applications
+3. Launch GAP from Applications (right-click > Open on first launch to bypass Gatekeeper)
+4. The GAP Server will start automatically and run at login
+
+The native app uses Data Protection Keychain with Developer ID signing, eliminating keychain password prompts.
+
+**Set up credentials:**
 ```bash
-# Install via Homebrew
-brew tap mikekelly/tap
-brew install gap
-
-# Start the background service
-brew services start gap
-
 # Initialize with a password (you'll need this for admin operations)
 gap init
 ```
 
 > **Note for oh-my-zsh users:** The `git` plugin aliases `gap` to `git apply`. You can either add `unalias gap` to your `.zshrc`, or use `gap-cli` instead (installed automatically as an alias).
-
-> **macOS App:** For the best experience on macOS, install the native GAP app from the [macos-app](./macos-app/) directory. The app uses Data Protection Keychain with Developer ID signing, which eliminates all keychain password prompts.
 
 Install a GAP plugin for a given service (eg. Exa) and set credentials:
 ```bash

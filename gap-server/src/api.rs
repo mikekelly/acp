@@ -1016,6 +1016,7 @@ mod tests {
             uptime_seconds: 42,
             proxy_port: 9443,
             api_port: 9080,
+            initialized: true,
         };
 
         let json = serde_json::to_string(&status).unwrap();

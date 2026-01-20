@@ -1,6 +1,6 @@
-# macOS Distribution Guide
+# macOS Code Signing Setup
 
-This document covers signing, notarizing, and distributing GAP binaries via Homebrew.
+This document covers the one-time setup for macOS code signing. For the release process, see [RELEASING.md](./RELEASING.md).
 
 ## Prerequisites
 
@@ -8,11 +8,12 @@ This document covers signing, notarizing, and distributing GAP binaries via Home
 - Apple Developer Program membership ($99/year): https://developer.apple.com/programs/
 
 ### Developer ID Certificate
+
 1. Go to https://developer.apple.com/account/resources/certificates/list
-2. Click "+" → Select "Developer ID Application"
+2. Click "+" -> Select "Developer ID Application"
 3. Create a Certificate Signing Request (CSR):
    - Open Keychain Access
-   - Menu: Keychain Access → Certificate Assistant → Request a Certificate from a Certificate Authority
+   - Menu: Keychain Access -> Certificate Assistant -> Request a Certificate from a Certificate Authority
    - Enter your email, select "Saved to disk"
    - Save the `.certSigningRequest` file
 4. Upload CSR to Apple, download the `.cer` file
@@ -20,7 +21,8 @@ This document covers signing, notarizing, and distributing GAP binaries via Home
 6. Verify: `security find-identity -v -p codesigning | grep "Developer ID"`
 
 ### Notarization Credentials
-1. Create app-specific password at https://appleid.apple.com (App-Specific Passwords → Generate)
+
+1. Create app-specific password at https://appleid.apple.com (App-Specific Passwords -> Generate)
 2. Store credentials in keychain:
    ```bash
    xcrun notarytool store-credentials "notarytool-profile" \
@@ -28,168 +30,6 @@ This document covers signing, notarizing, and distributing GAP binaries via Home
      --team-id "YOUR_TEAM_ID" \
      --password "xxxx-xxxx-xxxx-xxxx"
    ```
-3. Credentials are stored in `.env.local` (gitignored) for reference
-
-## Release Process
-
-### 1. Bump Version
-
-Update the version in `Cargo.toml`:
-```bash
-# Edit Cargo.toml and change:
-# [workspace.package]
-# version = "0.1.1"  # <- increment this
-
-# Verify the change
-grep 'version = ' Cargo.toml
-```
-
-### 2. Build Release Binaries
-```bash
-cargo build --release
-
-# Verify version is correct
-./target/release/gap --version
-./target/release/gap-server --version
-```
-Binaries are created at:
-- `target/release/gap`
-- `target/release/gap-server`
-
-### 3. Sign with Developer ID
-```bash
-./scripts/macos-sign.sh --production
-```
-
-This script:
-- Signs both binaries with Developer ID
-- Enables hardened runtime (`--options runtime`)
-- Adds secure timestamp (`--timestamp`)
-- Adds `disable-library-validation` entitlement (required for Homebrew OpenSSL compatibility)
-- Verifies signatures
-
-**Important:** The `disable-library-validation` entitlement is required because:
-- Hardened runtime prevents loading libraries with different Team IDs
-- Homebrew's OpenSSL has a different (or no) Team ID
-- Without this entitlement, users get: "mapping process and mapped file have different Team IDs"
-
-### 4. Notarize with Apple
-```bash
-# Create zip and submit for notarization
-cd target/release
-zip ../../dist/gap-binaries.zip gap gap-server
-cd ../..
-
-xcrun notarytool submit dist/gap-binaries.zip \
-  --keychain-profile "notarytool-profile" \
-  --wait
-```
-
-This:
-- Submits to Apple's notarization service
-- Waits for approval (usually 2-5 minutes)
-- Status should be "Accepted"
-
-**Note:** Stapling only works for `.app`, `.pkg`, and `.dmg` files. Bare executables can't be stapled, but Gatekeeper will verify them online.
-
-### 5. Package Release Tarball
-```bash
-cd target/release
-tar -czvf ../../dist/gap-darwin-arm64.tar.gz gap gap-server
-cd ../..
-shasum -a 256 dist/gap-darwin-arm64.tar.gz
-```
-
-Record the SHA256 - you'll need it for the Homebrew formula.
-
-### 6. Commit and Tag
-```bash
-git add Cargo.toml Cargo.lock
-git commit -m "Bump version to X.Y.Z"
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin main
-git push origin vX.Y.Z
-```
-
-### 7. Create GitHub Release
-```bash
-gh release create vX.Y.Z \
-  --title "vX.Y.Z - Description" \
-  --notes "Release notes here" \
-  dist/gap-darwin-arm64.tar.gz
-```
-
-### 8. Update Homebrew Formula
-Edit `~/code/homebrew-gap/Formula/gap-server.rb`:
-- Update `version`
-- Update `url` to point to new release
-- Update `sha256` with the checksum from step 5
-
-```bash
-cd ~/code/homebrew-gap
-git add Formula/gap-server.rb
-git commit -m "Update to v0.1.0"
-git push
-```
-
-## Homebrew Tap Structure
-
-Repository: https://github.com/mikekelly/homebrew-gap
-
-```
-homebrew-gap/
-├── README.md
-└── Formula/
-    └── gap-server.rb
-```
-
-### Formula Template
-```ruby
-class GapServer < Formula
-  desc "Gated Agent Proxy - secure credential management for AI agents"
-  homepage "https://github.com/mikekelly/gap"
-  version "0.1.0"
-  license "MIT"
-
-  on_macos do
-    if Hardware::CPU.arm?
-      url "https://github.com/mikekelly/gap/releases/download/v0.1.0/gap-darwin-arm64.tar.gz"
-      sha256 "SHA256_HERE"
-    else
-      odie "Intel Mac binary not yet available. Please build from source."
-    end
-  end
-
-  def install
-    bin.install "gap"
-    bin.install "gap-server"
-  end
-
-  service do
-    run [opt_bin/"gap-server"]
-    keep_alive true
-    log_path var/"log/gap-server.log"
-    error_log_path var/"log/gap-server.err"
-  end
-
-  test do
-    system "#{bin}/gap-server", "--version"
-  end
-end
-```
-
-## User Installation
-
-```bash
-brew tap mikekelly/gap
-brew install gap-server
-
-# Start as background service
-brew services start gap-server
-
-# Or run directly
-gap-server
-```
 
 ## Troubleshooting
 
@@ -204,7 +44,7 @@ The private key from your CSR isn't in the keychain. Either:
 Solution: Revoke the certificate and create a new one with a fresh CSR on this Mac.
 
 ### "different Team IDs" error when running binary
-The binary needs the `disable-library-validation` entitlement. Re-sign with:
+The binary needs the `disable-library-validation` entitlement. The build scripts handle this automatically, but if signing manually, use:
 ```bash
 codesign --sign "Developer ID Application" \
   --force --options runtime --timestamp \
@@ -223,21 +63,3 @@ Where `entitlements.plist` contains:
 </dict>
 </plist>
 ```
-
-### Stapling fails with Error 73
-This is expected for bare Mach-O executables. Stapling only works for `.app`, `.pkg`, and `.dmg` files. The binary is still notarized - Gatekeeper will verify online.
-
-### SHA256 mismatch after reinstall
-If you re-signed/re-notarized, you need to:
-1. Re-create the tarball
-2. Get new SHA256
-3. Update GitHub release (delete old asset, upload new)
-4. Update formula with new SHA256
-5. Push formula changes
-
-## Future Improvements
-
-- **Static link OpenSSL**: Eliminates need for `disable-library-validation` entitlement
-- **Intel Mac builds**: Add x86_64 binaries via cross-compilation or CI
-- **Linux builds**: Add Linux binaries for Linuxbrew
-- **Automated releases**: GitHub Actions workflow for build → sign → notarize → release
