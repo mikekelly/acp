@@ -76,7 +76,7 @@ JSON structure containing TokenEntry, PluginEntry, and CredentialEntry lists.
 `Registry.load()` returns empty RegistryData if not found (not an error).
 
 ### Registry Metadata Types
-- `TokenEntry` - Token metadata (name, creation time, prefix)
+- `TokenEntry` - Token metadata (full token value, name, creation time)
 - `PluginEntry` - Plugin metadata (name, patterns, credential schema)
 - `CredentialEntry` - Credential metadata (plugin name, field names)
 

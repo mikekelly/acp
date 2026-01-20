@@ -15,13 +15,13 @@ All types use `.with_*()` methods for fluent construction.
 Use `GapError::storage("msg")` rather than `GapError::Storage("msg".to_string())`.
 
 ### Registry Pattern
-Centralized metadata storage at key "_registry" solves listing issues on platforms like macOS Keychain. Registry tracks what exists (metadata), while actual values remain at individual keys. `Registry.load()` returns empty `RegistryData` if not found (not an error).
+Centralized metadata storage at key "_registry" solves listing issues on platforms like macOS Keychain. Registry stores all metadata (tokens, plugins, credentials, password hash) in a single JSON document in SecretStore. `Registry.load()` returns empty `RegistryData` if not found (not an error).
 
 ### Credential Storage Pattern
-Management API stores credentials as `credential:{plugin}:{field_name}` (e.g., `credential:exa:api_key`). ProxyServer loads ALL fields for a plugin by listing keys with prefix `credential:{plugin}:` and builds a `GAPCredentials` object.
+Credentials are stored in the Registry at key "_registry" as a nested HashMap: `plugin -> (field -> value)`. This centralized storage enables listing and management without requiring SecretStore enumeration capabilities.
 
 ### Token Storage Pattern
-Tokens stored as `token:{token_value}` → `{name, created_at}` in SecretStore, enabling direct lookup by token value without caching layer.
+Tokens are stored in the Registry at key "_registry" as a HashMap: `token_value -> {name, created_at}`. This enables O(1) lookup by token value for authentication without requiring SecretStore enumeration.
 
 ### SecretStore Sharing
 ProxyServer receives `Arc<dyn SecretStore>` from main.rs (same instance as Management API) to ensure consistent credential access.
@@ -90,8 +90,8 @@ REST API for configuration and monitoring.
 
 ### Token Management
 - Full token value only returned on creation (via `token` field)
-- List endpoint shows prefix only for security
-- Token persistence: Stored in SecretStore with key `token:{token_value}` → `{name, created_at}` JSON
+- List endpoint returns full token in `id` field, calculated prefix (first 8 chars) in `prefix` field, but `token` field is null
+- Token persistence: Stored in Registry (key "_registry") as HashMap `token_value -> {name, created_at}`
 
 ### State Management
 - `ApiState` holds:
@@ -114,7 +114,7 @@ Command-line interface for GAP management.
 ### HTTP Client
 - Built with `reqwest` 0.12
 - Handles JSON requests/responses
-- Server URL configurable via `--server` flag (default: http://localhost:9080)
+- Server URL configurable via `--server` flag (default: https://localhost:9080)
 
 ### Command Structure
 - Uses clap derive macros with nested subcommands (e.g., `token create`)

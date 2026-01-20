@@ -400,7 +400,7 @@ DELETE /plugins/:name            → { password_hash }
 POST /credentials/:plugin/:key   → { value, password_hash }
 DELETE /credentials/:plugin/:key → { password_hash }
 
-GET  /tokens                     → [{ id, name, prefix, created_at }]
+GET  /tokens                     → [{ id, name, prefix, token: null, created_at }]
 POST /tokens                     → { name, password_hash } → { id, name, token }
 DELETE /tokens/:id               → { password_hash }
 
@@ -449,7 +449,7 @@ gap set <plugin>:<key>              Set credential (interactive value input)
 # Password required - Agent Tokens
 gap token                           Manage agent tokens (subcommand)
   gap token create <name>           Create new agent token
-  gap token list                    List agent tokens (shows prefixes only)
+  gap token list                    List agent tokens (id field contains full token, token field is null)
   gap token delete <id>             Delete agent token
 
 # Password required - Monitoring

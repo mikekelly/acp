@@ -240,11 +240,11 @@ export GAP_SERVER_BIN=./target/release/gap-server
 
 **Expected:**
 - Lists tokens with:
-  - ID
+  - ID (contains full token value)
   - Name
-  - Prefix (partial token for identification)
+  - Prefix (first 8 characters for display)
   - Created timestamp
-- Full token NOT shown (only prefix)
+  - Token field (null - not shown in list)
 
 ### 5.3 Revoke token
 

@@ -120,7 +120,8 @@ Build the main window views. These can be developed in parallel.
    - Update and uninstall buttons per plugin
 
 10. **Implement TokensView**:
-    - List tokens with name, prefix, created date
+    - List tokens with name, prefix (for display), created date
+    - Note: API returns full token in id field; use prefix field for UI display
     - Create button (text field for name)
     - Copy token on creation
     - Revoke button per token
