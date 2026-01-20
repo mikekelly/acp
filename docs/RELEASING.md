@@ -70,21 +70,29 @@ This script:
 
 ### 4. Notarize the DMG
 
+**One-time setup** (store credentials in keychain):
 ```bash
-# Submit for notarization (requires Apple ID credentials)
-xcrun notarytool submit build/GAP.dmg \
+xcrun notarytool store-credentials "notarytool-profile" \
     --apple-id "YOUR_APPLE_ID" \
     --team-id "3R44BTH39W" \
-    --password "APP_SPECIFIC_PASSWORD" \
-    --wait
+    --password "APP_SPECIFIC_PASSWORD"
+```
 
-# After success, staple the ticket to the DMG
-xcrun stapler staple build/GAP.dmg
+**Notarize the DMG:**
+```bash
+./scripts/macos-notarize.sh build/GAP.dmg --keychain-profile "notarytool-profile"
+```
+
+Or set via environment variable:
+```bash
+export NOTARIZE_KEYCHAIN_PROFILE="notarytool-profile"
+./scripts/macos-notarize.sh build/GAP.dmg
 ```
 
 **Notes:**
-- Notarization typically completes in 1-5 minutes
-- Stapling embeds the ticket for offline Gatekeeper verification
+- Credentials are stored securely in macOS Keychain for future use
+- Notarization typically completes in 2-5 minutes
+- The script automatically staples the notarization ticket to the DMG
 - Notarized apps won't trigger "unidentified developer" warnings
 
 ### 5. Create GitHub Release
@@ -163,15 +171,13 @@ Post-release:
 Install your Developer ID certificate from Apple Developer Portal. Must be "Developer ID Application" (not "Apple Development").
 
 ### Notarization fails
-Check the notarization log for details:
-```bash
-xcrun notarytool log <submission-id> --keychain-profile "notarytool-profile"
-```
+The notarization script displays Apple's error response on failure.
 
 Common issues:
 - Binary not signed with hardened runtime
 - Missing timestamp
 - Unsigned nested components
+- Incorrect bundle_id specified
 
 ### Stapling fails with Error 73
 This is expected for bare executables. Stapling only works for `.app`, `.pkg`, and `.dmg` files.

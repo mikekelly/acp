@@ -22,14 +22,17 @@ This document covers the one-time setup for macOS code signing. For the release 
 
 ### Notarization Credentials
 
-1. Create app-specific password at https://appleid.apple.com (App-Specific Passwords -> Generate)
-2. Store credentials in keychain:
-   ```bash
-   xcrun notarytool store-credentials "notarytool-profile" \
-     --apple-id "your-apple-id@example.com" \
-     --team-id "YOUR_TEAM_ID" \
-     --password "xxxx-xxxx-xxxx-xxxx"
-   ```
+Create an app-specific password at https://appleid.apple.com (App-Specific Passwords -> Generate).
+
+Store credentials in keychain (one-time setup):
+```bash
+xcrun notarytool store-credentials "notarytool-profile" \
+    --apple-id "YOUR_APPLE_ID" \
+    --team-id "3R44BTH39W" \
+    --password "APP_SPECIFIC_PASSWORD"
+```
+
+The profile name can be anything; use it when running `scripts/macos-notarize.sh`.
 
 ## Troubleshooting
 

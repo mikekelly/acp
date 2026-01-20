@@ -81,7 +81,7 @@ cd macos-app
 
 **Manual steps (cannot be automated by agents):**
 1. **Keychain unlock** - macOS prompts for password when accessing Developer ID certificate
-2. **Notarization** - Requires Apple ID credentials
+2. **Notarization** - First-time setup requires Apple ID credentials (use `xcrun notarytool store-credentials`)
 3. **Provisioning profiles** - Must be downloaded from Apple Developer portal first
 
 **Testing signed builds:**
