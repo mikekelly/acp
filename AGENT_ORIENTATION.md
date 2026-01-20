@@ -98,6 +98,26 @@ cd macos-app
 - Keychain prompt loop: Access group in code must match `keychain-access-groups` entitlement
 - LibreSSL TLS error: macOS system curl incompatible with TLS 1.3 PQ key exchange; use homebrew curl
 
+**Notarization Process:**
+```bash
+# After signing, submit for notarization (requires Apple ID credentials):
+xcrun notarytool submit build/GAP.dmg \
+    --apple-id "YOUR_APPLE_ID" \
+    --team-id "3R44BTH39W" \
+    --password "APP_SPECIFIC_PASSWORD" \
+    --wait
+
+# After success, staple the ticket to the DMG:
+xcrun stapler staple build/GAP.dmg
+```
+
+**Notarization notes:**
+- Requires app-specific password (generate at appleid.apple.com)
+- Typically completes in 1-5 minutes
+- Stapling embeds the ticket for offline Gatekeeper verification
+- Notarized apps won't trigger "unidentified developer" warnings
+- DMG must be signed before notarization
+
 ## Quick Type Reference
 
 Key types you'll use frequently:
