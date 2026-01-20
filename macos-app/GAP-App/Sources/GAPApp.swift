@@ -23,14 +23,43 @@ struct GAPApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var appState = AppState()
 
+    @Environment(\.openWindow) var openWindow
+
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView()
-                .environmentObject(appState)
+            // Use standard menu items for reliability
+            if !appState.serverInstalled {
+                Button("Install Server") {
+                    try? "Menu Install at \(Date())".write(toFile: "/tmp/gap-menu-install.txt", atomically: true, encoding: .utf8)
+                    appState.installServer()
+                }
+            } else if appState.serverRunning {
+                Text("✓ Server Running")
+                Button("Stop Server") {
+                    appState.stopServer()
+                }
+            } else {
+                Text("○ Server Stopped")
+                Button("Start Server") {
+                    appState.startServer()
+                }
+            }
+
+            Divider()
+
+            Button("Open GAP...") {
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+
+            Divider()
+
+            Button("Quit GAP") {
+                NSApplication.shared.terminate(nil)
+            }
         } label: {
             Image(systemName: appState.serverRunning ? "lock.shield.fill" : "lock.shield")
         }
-        .menuBarExtraStyle(.window)
 
         Window("GAP", id: "main") {
             ContentView()
@@ -44,10 +73,14 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
+        let _ = try? "ContentView: installed=\(appState.serverInstalled), running=\(appState.serverRunning), initialized=\(appState.serverInitialized), auth=\(appState.isAuthenticated) at \(Date())".write(toFile: "/tmp/gap-state.txt", atomically: true, encoding: .utf8)
+
         if !appState.serverInstalled {
             ServerInstallView()
         } else if !appState.serverRunning {
             ServerStartView()
+        } else if !appState.serverInitialized {
+            ServerInitView()
         } else if appState.isAuthenticated {
             MainWindow()
         } else {
@@ -75,12 +108,30 @@ struct ServerInstallView: View {
                 .frame(width: 300)
 
             Button("Install Server") {
+                print("BUTTON PRESSED")
+                NSLog("GAP: Install button clicked!")
+                let result = "Button clicked at \(Date())"
+                do {
+                    try result.write(toFile: "/tmp/gap-button-click.txt", atomically: true, encoding: .utf8)
+                    print("Wrote to file")
+                } catch {
+                    print("Write failed: \(error)")
+                }
                 appState.installServer()
             }
             .buttonStyle(.borderedProminent)
+            .onHover { hovering in
+                if hovering {
+                    try? "Hovering at \(Date())".write(toFile: "/tmp/gap-hover.txt", atomically: true, encoding: .utf8)
+                }
+            }
         }
         .padding(40)
         .frame(width: 400, height: 300)
+        .onAppear {
+            try? "ServerInstallView appeared at \(Date())".write(toFile: "/tmp/gap-view-appeared.txt", atomically: true, encoding: .utf8)
+            print("ServerInstallView onAppear")
+        }
     }
 }
 
@@ -105,6 +156,11 @@ struct ServerStartView: View {
             HStack(spacing: 12) {
                 Button("Start Server") {
                     appState.startServer()
+                    // Check status after starting to update initialized state
+                    Task {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000) // Wait 2 seconds
+                        await appState.checkServerStatus()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
 
@@ -115,5 +171,97 @@ struct ServerStartView: View {
         }
         .padding(40)
         .frame(width: 400, height: 300)
+    }
+}
+
+/// View shown when the server is running but not initialized
+struct ServerInitView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var password = ""
+    @State private var confirmPassword = ""
+    @State private var errorMessage: String?
+    @State private var isLoading = false
+
+    var passwordsMatch: Bool {
+        !password.isEmpty && password == confirmPassword
+    }
+
+    var passwordValid: Bool {
+        password.count >= 8
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "key.fill")
+                .font(.system(size: 48))
+                .foregroundColor(.accentColor)
+
+            Text("Set Up GAP Password")
+                .font(.headline)
+
+            Text("Create a password to secure your GAP server. This password will be required to manage plugins and tokens.")
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .frame(width: 300)
+
+            VStack(spacing: 12) {
+                SecureField("Password (min 8 characters)", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 280)
+
+                SecureField("Confirm Password", text: $confirmPassword)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 280)
+            }
+
+            if let error = errorMessage {
+                Text(error)
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+
+            Button(action: initializeServer) {
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else {
+                    Text("Initialize Server")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!passwordsMatch || !passwordValid || isLoading)
+
+            if !password.isEmpty && !passwordValid {
+                Text("Password must be at least 8 characters")
+                    .foregroundColor(.orange)
+                    .font(.caption)
+            } else if !password.isEmpty && !confirmPassword.isEmpty && !passwordsMatch {
+                Text("Passwords do not match")
+                    .foregroundColor(.orange)
+                    .font(.caption)
+            }
+        }
+        .padding(40)
+        .frame(width: 400, height: 400)
+        .onAppear {
+            // Check status when view appears
+            Task {
+                await appState.checkServerStatus()
+            }
+        }
+    }
+
+    private func initializeServer() {
+        isLoading = true
+        errorMessage = nil
+
+        Task {
+            do {
+                try await appState.initializeServer(password: password)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isLoading = false
+        }
     }
 }

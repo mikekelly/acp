@@ -1,0 +1,234 @@
+#!/bin/bash
+# Build GAP.app with embedded gap-server helper and create DMG
+set -e
+
+cd "$(dirname "$0")"
+
+APP_NAME="GAP"
+HELPER_NAME="gap-server"
+BUNDLE_ID="com.mikekelly.gap"
+HELPER_BUNDLE_ID="com.mikekelly.gap-server"
+TEAM_ID="3R44BTH39W"
+
+echo "=== Building GAP.app with embedded helper ==="
+
+# Clean previous build
+rm -rf build/${APP_NAME}.app build/*.dmg
+
+# 1. Build gap-server if not already built
+if [ ! -f "../target/release/gap-server" ]; then
+    echo "Building gap-server..."
+    (cd .. && cargo build --release --bin gap-server)
+fi
+
+# 2. Create main app bundle structure
+echo "Creating app bundle structure..."
+mkdir -p "build/${APP_NAME}.app/Contents/MacOS"
+mkdir -p "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/MacOS"
+mkdir -p "build/${APP_NAME}.app/Contents/Resources"
+
+# 3. Create main app Info.plist
+cat > "build/${APP_NAME}.app/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>${BUNDLE_ID}</string>
+    <key>CFBundleName</key>
+    <string>${APP_NAME}</string>
+    <key>CFBundleDisplayName</key>
+    <string>GAP - Gated Agent Proxy</string>
+    <key>CFBundleExecutable</key>
+    <string>${APP_NAME}</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# 4. Create helper app Info.plist
+cat > "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>${HELPER_BUNDLE_ID}</string>
+    <key>CFBundleName</key>
+    <string>${HELPER_NAME}</string>
+    <key>CFBundleDisplayName</key>
+    <string>GAP Server</string>
+    <key>CFBundleExecutable</key>
+    <string>${HELPER_NAME}</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# 5. Copy gap-server binary
+echo "Copying gap-server binary..."
+cp "../target/release/gap-server" "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/MacOS/"
+
+# 6. Build Swift main app
+echo "Building Swift main app..."
+if [ -d "GAP-App" ]; then
+    (cd GAP-App && swift build -c release) || {
+        echo "Swift build failed, using shell script fallback"
+        USE_SHELL_FALLBACK=true
+    }
+fi
+
+# 7. Copy main app binary
+if [ -f "GAP-App/.build/release/GAP" ] && [ -z "$USE_SHELL_FALLBACK" ]; then
+    echo "Using Swift main app"
+    cp "GAP-App/.build/release/GAP" "build/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+else
+    echo "Using shell script fallback for main app"
+    cat > "build/${APP_NAME}.app/Contents/MacOS/${APP_NAME}" <<'MAINAPP'
+#!/bin/bash
+
+PLIST_NAME="com.mikekelly.gap-server.plist"
+LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
+HELPER_PATH="/Applications/GAP.app/Contents/Library/LoginItems/gap-server.app/Contents/MacOS/gap-server"
+PLIST_DST="$LAUNCH_AGENTS_DIR/$PLIST_NAME"
+
+create_plist() {
+    cat > "$PLIST_DST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mikekelly.gap-server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HELPER_PATH</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/gap-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/gap-server.log</string>
+</dict>
+</plist>
+PLIST
+}
+
+install_and_start() {
+    mkdir -p "$LAUNCH_AGENTS_DIR"
+    launchctl unload "$PLIST_DST" 2>/dev/null
+    create_plist
+    launchctl load "$PLIST_DST"
+    sleep 1
+
+    if launchctl list | grep -q "com.mikekelly.gap-server"; then
+        osascript -e 'display dialog "GAP Server installed and running!\n\nIt will start automatically at login.\n\nUse the gap CLI to manage credentials and tokens." buttons {"OK"} default button "OK" with title "GAP - Gated Agent Proxy"'
+    else
+        osascript -e 'display dialog "GAP Server installation failed.\n\nCheck /tmp/gap-server.log for details." buttons {"OK"} default button "OK" with icon stop with title "GAP - Error"'
+    fi
+}
+
+show_status() {
+    if launchctl list | grep -q "com.mikekelly.gap-server"; then
+        STATUS="Running"
+    else
+        STATUS="Stopped"
+    fi
+
+    CHOICE=$(osascript -e 'display dialog "GAP Server Status: '"$STATUS"'\n\nThe server runs automatically at login." buttons {"Uninstall", "Reinstall", "OK"} default button "OK" with title "GAP - Gated Agent Proxy"' -e 'button returned of result' 2>/dev/null)
+
+    case "$CHOICE" in
+        "Uninstall")
+            launchctl unload "$PLIST_DST" 2>/dev/null
+            rm -f "$PLIST_DST"
+            osascript -e 'display dialog "GAP Server uninstalled." buttons {"OK"} default button "OK" with title "GAP"'
+            ;;
+        "Reinstall")
+            install_and_start
+            ;;
+    esac
+}
+
+if [ ! -f "$PLIST_DST" ]; then
+    install_and_start
+else
+    show_status
+fi
+MAINAPP
+    chmod +x "build/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+fi
+
+# 8. Create entitlements files
+cat > "build/helper.entitlements" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.application-identifier</key>
+    <string>${TEAM_ID}.${HELPER_BUNDLE_ID}</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>${TEAM_ID}</string>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>${TEAM_ID}.${HELPER_BUNDLE_ID}</string>
+    </array>
+</dict>
+</plist>
+EOF
+
+cat > "build/main.entitlements" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.application-identifier</key>
+    <string>${TEAM_ID}.${BUNDLE_ID}</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>${TEAM_ID}</string>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>${TEAM_ID}.${HELPER_BUNDLE_ID}</string>
+    </array>
+</dict>
+</plist>
+EOF
+
+echo ""
+echo "=== App bundle created ==="
+echo "To sign and create DMG, run: ./sign-and-package.sh"
+echo ""
+echo "Bundle structure:"
+find "build/${APP_NAME}.app" -type f | head -20

@@ -1,0 +1,96 @@
+#!/bin/bash
+# Sign the app bundle and create DMG
+# Run this after build-dmg.sh and setup-provisioning.sh (to get provisioning profile)
+set -e
+
+cd "$(dirname "$0")"
+
+APP_NAME="GAP"
+HELPER_NAME="gap-server"
+BUNDLE_ID="com.mikekelly.gap"
+HELPER_BUNDLE_ID="com.mikekelly.gap-server"
+
+echo "=== Signing and Packaging GAP.app ==="
+
+# Check app bundle exists
+if [ ! -d "build/${APP_NAME}.app" ]; then
+    echo "ERROR: build/${APP_NAME}.app not found. Run ./build-dmg.sh first."
+    exit 1
+fi
+
+# Check for provisioning profiles (optional but recommended for keychain access)
+if [ -f "build/main.mobileprovision" ] && [ -f "build/helper.mobileprovision" ]; then
+    echo "Embedding provisioning profiles..."
+    cp "build/main.mobileprovision" "build/${APP_NAME}.app/Contents/embedded.provisionprofile"
+    cp "build/helper.mobileprovision" "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/embedded.provisionprofile"
+elif [ -f "build/embedded.mobileprovision" ]; then
+    echo "Embedding single provisioning profile (legacy)..."
+    cp "build/embedded.mobileprovision" "build/${APP_NAME}.app/Contents/embedded.provisionprofile"
+    cp "build/embedded.mobileprovision" "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/embedded.provisionprofile"
+else
+    echo "WARNING: No provisioning profiles found. Keychain access may prompt for password."
+    echo "Run ./setup-app-provisioning.sh to create them."
+fi
+
+# Sign INSIDE-OUT (critical!)
+echo ""
+echo "=== Step 1: Signing helper app (inside) ==="
+codesign --sign "Apple Development" \
+    --force \
+    --options runtime \
+    --entitlements "build/helper.entitlements" \
+    "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app"
+
+echo "=== Step 2: Signing main app (outside) ==="
+codesign --sign "Apple Development" \
+    --force \
+    --options runtime \
+    --entitlements "build/main.entitlements" \
+    "build/${APP_NAME}.app"
+
+echo ""
+echo "=== Step 3: Verifying signatures ==="
+codesign --verify --deep --verbose=2 "build/${APP_NAME}.app"
+
+echo ""
+echo "=== Step 4: Creating DMG ==="
+
+# Check if create-dmg is installed
+if command -v create-dmg &> /dev/null; then
+    # Use sindresorhus/create-dmg (simple)
+    cd build
+    create-dmg "${APP_NAME}.app" || true  # May fail if DMG exists
+    cd ..
+
+    DMG_FILE=$(ls -t build/*.dmg 2>/dev/null | head -1)
+    if [ -n "$DMG_FILE" ]; then
+        echo ""
+        echo "=== Done! ==="
+        echo "DMG created: $DMG_FILE"
+        echo ""
+        echo "To install:"
+        echo "  1. Open the DMG"
+        echo "  2. Drag GAP to Applications"
+        echo "  3. First launch: right-click > Open (to bypass Gatekeeper)"
+        echo "  4. Approve 'GAP Server' in System Settings > Login Items"
+    fi
+else
+    echo "create-dmg not found. Install with: brew install create-dmg"
+    echo ""
+    echo "Creating DMG manually with hdiutil..."
+
+    # Fallback to hdiutil
+    rm -f "build/${APP_NAME}.dmg"
+    hdiutil create -srcfolder "build/${APP_NAME}.app" \
+        -volname "${APP_NAME}" \
+        -fs HFS+ \
+        -format UDZO \
+        "build/${APP_NAME}.dmg"
+
+    echo ""
+    echo "=== Done! ==="
+    echo "DMG created: build/${APP_NAME}.dmg"
+    echo ""
+    echo "Note: This is a basic DMG without the drag-to-Applications UI."
+    echo "Install create-dmg for a nicer installer experience."
+fi
