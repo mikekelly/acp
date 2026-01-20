@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="gap_logo.png" alt="GAP Logo" width="250">
+</p>
+
 # GAP (Gated Agent Proxy)
 
 **Give AI agents secure access to your APIs - without sharing your credentials.**
