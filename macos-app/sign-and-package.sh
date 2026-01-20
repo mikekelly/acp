@@ -35,16 +35,18 @@ fi
 # Sign INSIDE-OUT (critical!)
 echo ""
 echo "=== Step 1: Signing helper app (inside) ==="
-codesign --sign "Apple Development" \
+codesign --sign "Developer ID Application: Mike Kelly (3R44BTH39W)" \
     --force \
     --options runtime \
+    --timestamp \
     --entitlements "build/helper.entitlements" \
     "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app"
 
 echo "=== Step 2: Signing main app (outside) ==="
-codesign --sign "Apple Development" \
+codesign --sign "Developer ID Application: Mike Kelly (3R44BTH39W)" \
     --force \
     --options runtime \
+    --timestamp \
     --entitlements "build/main.entitlements" \
     "build/${APP_NAME}.app"
 
@@ -81,8 +83,13 @@ if command -v create-dmg &> /dev/null; then
         rm -rf "$STAGING_DIR"
 
         echo ""
+        echo "=== Step 5: Signing DMG ==="
+        codesign -s "Developer ID Application: Mike Kelly (3R44BTH39W)" --timestamp "$DMG_FILE"
+        echo "DMG signed: $DMG_FILE"
+
+        echo ""
         echo "=== Done! ==="
-        echo "DMG created: $DMG_FILE"
+        echo "DMG created and signed: $DMG_FILE"
         echo ""
         echo "To install:"
         echo "  1. Open the DMG"
@@ -107,8 +114,13 @@ else
     rm -rf "$STAGING_DIR"
 
     echo ""
+    echo "=== Step 5: Signing DMG ==="
+    codesign -s "Developer ID Application: Mike Kelly (3R44BTH39W)" --timestamp "build/${APP_NAME}.dmg"
+    echo "DMG signed: build/${APP_NAME}.dmg"
+
+    echo ""
     echo "=== Done! ==="
-    echo "DMG created: build/${APP_NAME}.dmg"
+    echo "DMG created and signed: build/${APP_NAME}.dmg"
     echo ""
     echo "The DMG includes an Applications folder symlink for easy drag-and-drop installation."
 fi

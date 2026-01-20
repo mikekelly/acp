@@ -15,10 +15,46 @@ This document covers the complete release process for GAP across all distributio
 ### Apple Developer Account (macOS releases)
 - Apple Developer Program membership ($99/year)
 - Developer ID Application certificate installed in Keychain
-- App-specific password for notarization (generate at https://appleid.apple.com)
+- Notarization credentials configured (see [macos-distribution.md](./macos-distribution.md) for one-time setup)
+- `.env.local` file with Apple credentials (copy from `.env.local.example` and fill in your values)
 
 ### Docker Hub Account (Docker releases)
 - Account with push access to `mikekelly321/gap`
+
+## First-Time Setup
+
+### macOS Notarization Setup
+
+**One-time setup required before your first release:**
+
+1. **Create `.env.local` with your credentials:**
+   ```bash
+   cp .env.local.example .env.local
+   # Edit .env.local and fill in:
+   # - APPLE_ID: Your Apple ID email
+   # - APPLE_TEAM_ID: From your Developer ID certificate
+   # - NOTARYTOOL_PASSWORD: App-specific password from appleid.apple.com
+   ```
+
+2. **Store credentials in macOS Keychain:**
+   ```bash
+   # Source the credentials
+   source .env.local
+
+   # Store in keychain (one-time setup)
+   xcrun notarytool store-credentials "notarytool-profile" \
+       --apple-id "$APPLE_ID" \
+       --team-id "$APPLE_TEAM_ID" \
+       --password "$NOTARYTOOL_PASSWORD"
+   ```
+
+3. **Set environment variable for scripts:**
+   ```bash
+   # Add to your shell profile (~/.zshrc or ~/.bashrc)
+   export NOTARIZE_KEYCHAIN_PROFILE="notarytool-profile"
+   ```
+
+**Note:** Credentials are stored securely in macOS Keychain. You only need to do this once per machine. See [macos-distribution.md](./macos-distribution.md) for detailed setup instructions.
 
 ## Version Tagging
 
@@ -70,27 +106,18 @@ This script:
 
 ### 4. Notarize the DMG
 
-**One-time setup** (store credentials in keychain):
-```bash
-xcrun notarytool store-credentials "notarytool-profile" \
-    --apple-id "YOUR_APPLE_ID" \
-    --team-id "3R44BTH39W" \
-    --password "APP_SPECIFIC_PASSWORD"
-```
+**Prerequisites:** You must have completed the one-time notarization setup (see "First-Time Setup" section above).
 
 **Notarize the DMG:**
 ```bash
+# If you set NOTARIZE_KEYCHAIN_PROFILE in your shell profile:
+./scripts/macos-notarize.sh build/GAP.dmg
+
+# Or specify the profile explicitly:
 ./scripts/macos-notarize.sh build/GAP.dmg --keychain-profile "notarytool-profile"
 ```
 
-Or set via environment variable:
-```bash
-export NOTARIZE_KEYCHAIN_PROFILE="notarytool-profile"
-./scripts/macos-notarize.sh build/GAP.dmg
-```
-
 **Notes:**
-- Credentials are stored securely in macOS Keychain for future use
 - Notarization typically completes in 2-5 minutes
 - The script automatically staples the notarization ticket to the DMG
 - Notarized apps won't trigger "unidentified developer" warnings
