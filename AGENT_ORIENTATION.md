@@ -89,10 +89,17 @@ cd macos-app
 - Use `--data-dir` flag with unsigned dev builds to bypass keychain
 - Smoke test: `./smoke-tests/test-https-proxy.sh`
 
+**Entitlements architecture:**
+- Main app (`GAP.app`): Minimal entitlements (just `app-sandbox=false`)
+- Helper binary (`gap-server`): Keychain entitlements required for Data Protection Keychain access
+- Entitlement files: `build/main.entitlements` and `build/helper.entitlements`
+- Signing must apply correct entitlements to each binary separately (inside-out order: helper first, then main app)
+
 **Common issues:**
 - `-34018` error: Binary not signed, or entitlements don't match provisioning profile
 - Keychain prompt loop: Access group in code must match `keychain-access-groups` entitlement
 - LibreSSL TLS error: macOS system curl incompatible with TLS 1.3 PQ key exchange; use homebrew curl
+- Error 163 on launch: Incorrect entitlements on main app (keep minimal: just `app-sandbox=false`)
 
 ## Quick Type Reference
 
