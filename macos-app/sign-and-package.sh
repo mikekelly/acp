@@ -18,19 +18,10 @@ if [ ! -d "build/${APP_NAME}.app" ]; then
     exit 1
 fi
 
-# Check for provisioning profiles (optional but recommended for keychain access)
-if [ -f "build/main.mobileprovision" ] && [ -f "build/helper.mobileprovision" ]; then
-    echo "Embedding provisioning profiles..."
-    cp "build/main.mobileprovision" "build/${APP_NAME}.app/Contents/embedded.provisionprofile"
-    cp "build/helper.mobileprovision" "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/embedded.provisionprofile"
-elif [ -f "build/embedded.mobileprovision" ]; then
-    echo "Embedding single provisioning profile (legacy)..."
-    cp "build/embedded.mobileprovision" "build/${APP_NAME}.app/Contents/embedded.provisionprofile"
-    cp "build/embedded.mobileprovision" "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/embedded.provisionprofile"
-else
-    echo "WARNING: No provisioning profiles found. Keychain access may prompt for password."
-    echo "Run ./setup-app-provisioning.sh to create them."
-fi
+# Note: For Developer ID distribution, we do NOT embed provisioning profiles.
+# Development profiles are restricted to specific device UDIDs and conflict with Developer ID signing.
+# The Data Protection Keychain works with Developer ID + keychain-access-groups entitlement.
+echo "Skipping provisioning profiles (not needed for Developer ID distribution)"
 
 # Sign INSIDE-OUT (critical!)
 echo ""
