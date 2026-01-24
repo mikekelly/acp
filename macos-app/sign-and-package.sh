@@ -25,13 +25,12 @@ echo "Skipping provisioning profiles (not needed for Developer ID distribution)"
 
 # Sign INSIDE-OUT (critical!)
 echo ""
-echo "=== Step 1: Signing helper app (inside) ==="
+echo "=== Step 1: Signing gap-server binary (inside) ==="
 codesign --sign "Developer ID Application: Mike Kelly (3R44BTH39W)" \
     --force \
     --options runtime \
     --timestamp \
-    --entitlements "build/helper.entitlements" \
-    "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app"
+    "build/${APP_NAME}.app/Contents/Resources/${HELPER_NAME}"
 
 echo "=== Step 2: Signing main app (outside) ==="
 codesign --sign "Developer ID Application: Mike Kelly (3R44BTH39W)" \

@@ -1,5 +1,4 @@
 import Foundation
-import ServiceManagement
 
 @MainActor
 class ServerManager: ObservableObject {
@@ -9,7 +8,7 @@ class ServerManager: ObservableObject {
     private let helperBundleID = "com.mikekelly.gap-server"
     private let launchAgentLabel = "com.mikekelly.gap-server"
     private let launchAgentPath: String
-    private let helperPath = "/Applications/GAP.app/Contents/Library/LoginItems/gap-server.app/Contents/MacOS/gap-server"
+    private let helperPath = "/Applications/GAP.app/Contents/Resources/gap-server"
 
     init() {
         launchAgentPath = NSHomeDirectory() + "/Library/LaunchAgents/\(launchAgentLabel).plist"
@@ -59,19 +58,10 @@ class ServerManager: ObservableObject {
         try? "install() called at \(Date())".write(toFile: "/tmp/gap-install-debug.txt", atomically: true, encoding: .utf8)
         NSLog("GAP: install() called")
 
-        // 1. Register as Login Item via SMAppService
-        let service = SMAppService.loginItem(identifier: helperBundleID)
-        do {
-            try service.register()
-            NSLog("GAP: Registered login item")
-        } catch {
-            NSLog("GAP: Failed to register login item: \(error)")
-        }
-
-        // 2. Install LaunchAgent for KeepAlive
+        // Install LaunchAgent for KeepAlive
         installLaunchAgent()
 
-        // 3. Start the server
+        // Start the server
         start()
     }
 
@@ -126,20 +116,11 @@ class ServerManager: ObservableObject {
     }
 
     func uninstall() {
-        // 1. Stop the server
+        // Stop the server
         stop()
 
-        // 2. Remove LaunchAgent
+        // Remove LaunchAgent
         try? FileManager.default.removeItem(atPath: launchAgentPath)
-
-        // 3. Unregister Login Item
-        let service = SMAppService.loginItem(identifier: helperBundleID)
-        do {
-            try service.unregister()
-            print("Unregistered login item")
-        } catch {
-            print("Failed to unregister login item: \(error)")
-        }
 
         checkStatus()
     }

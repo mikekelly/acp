@@ -24,7 +24,6 @@ fi
 # 2. Create main app bundle structure
 echo "Creating app bundle structure..."
 mkdir -p "build/${APP_NAME}.app/Contents/MacOS"
-mkdir -p "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/MacOS"
 mkdir -p "build/${APP_NAME}.app/Contents/Resources"
 
 # 3. Create main app Info.plist
@@ -61,39 +60,9 @@ cat > "build/${APP_NAME}.app/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-# 4. Create helper app Info.plist
-cat > "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleIdentifier</key>
-    <string>${HELPER_BUNDLE_ID}</string>
-    <key>CFBundleName</key>
-    <string>${HELPER_NAME}</string>
-    <key>CFBundleDisplayName</key>
-    <string>GAP Server</string>
-    <key>CFBundleExecutable</key>
-    <string>${HELPER_NAME}</string>
-    <key>CFBundleVersion</key>
-    <string>1.0.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSBackgroundOnly</key>
-    <true/>
-    <key>LSUIElement</key>
-    <true/>
-</dict>
-</plist>
-EOF
-
-# 5. Copy gap-server binary
+# 4. Copy gap-server binary to Resources
 echo "Copying gap-server binary..."
-cp "../target/release/gap-server" "build/${APP_NAME}.app/Contents/Library/LoginItems/${HELPER_NAME}.app/Contents/MacOS/"
+cp "../target/release/gap-server" "build/${APP_NAME}.app/Contents/Resources/"
 
 # 6. Build Swift main app
 echo "Building Swift main app..."
@@ -126,7 +95,7 @@ else
 
 PLIST_NAME="com.mikekelly.gap-server.plist"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
-HELPER_PATH="/Applications/GAP.app/Contents/Library/LoginItems/gap-server.app/Contents/MacOS/gap-server"
+HELPER_PATH="/Applications/GAP.app/Contents/Resources/gap-server"
 PLIST_DST="$LAUNCH_AGENTS_DIR/$PLIST_NAME"
 
 create_plist() {
@@ -198,43 +167,14 @@ MAINAPP
     chmod +x "build/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
 fi
 
-# 8. Create entitlements files
-cat > "build/helper.entitlements" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>com.apple.application-identifier</key>
-    <string>${TEAM_ID}.${HELPER_BUNDLE_ID}</string>
-    <key>com.apple.developer.team-identifier</key>
-    <string>${TEAM_ID}</string>
-    <key>com.apple.security.app-sandbox</key>
-    <false/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <key>keychain-access-groups</key>
-    <array>
-        <string>${TEAM_ID}.${HELPER_BUNDLE_ID}</string>
-    </array>
-</dict>
-</plist>
-EOF
-
+# 8. Create entitlements file
 cat > "build/main.entitlements" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>com.apple.application-identifier</key>
-    <string>${TEAM_ID}.${BUNDLE_ID}</string>
-    <key>com.apple.developer.team-identifier</key>
-    <string>${TEAM_ID}</string>
     <key>com.apple.security.app-sandbox</key>
     <false/>
-    <key>keychain-access-groups</key>
-    <array>
-        <string>${TEAM_ID}.${HELPER_BUNDLE_ID}</string>
-    </array>
 </dict>
 </plist>
 EOF
