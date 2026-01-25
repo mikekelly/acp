@@ -89,6 +89,15 @@ cd macos-app
 - Entitlement files: `build/main.entitlements` and `build/helper.entitlements` (tracked in git)
 - Signing must apply correct entitlements to each binary separately (inside-out order: helper first, then main app)
 
+**Icon regeneration:**
+- Source logo: `gap_logo.png` (1024x1024 PNG in project root)
+- Script: `macos-app/regenerate-icons.sh` - regenerates all icon sizes from source
+- Icons stored in: `macos-app/GAP-App/Sources/Assets.xcassets/AppIcon.appiconset/`
+- After regenerating, must run `macos-app/build-dmg.sh` to rebuild the app
+- Build script uses `xcrun actool` to compile icons into `AppIcon.icns`
+- **Critical:** Always verify icon content visually, not just timestamps. Simply copying icon files doesn't update the built app - must run regenerate script to properly resize from source.
+- **macOS icon caching:** After rebuilding with new icons, may need to clear system icon cache (`rm -rf /Library/Caches/com.apple.iconservices.store` and `killall Dock Finder`) or restart Mac.
+
 **Common issues:**
 - LibreSSL TLS error: macOS system curl incompatible with TLS 1.3 PQ key exchange; use homebrew curl
 - Error 163 on launch: Incorrect entitlements on main app (keep minimal: just `app-sandbox=false`)
