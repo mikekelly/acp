@@ -37,7 +37,7 @@ cat > "build/${APP_NAME}.app/Contents/Info.plist" <<EOF
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key>
-    <string>GAP - Gated Agent Proxy</string>
+    <string>Gap</string>
     <key>CFBundleExecutable</key>
     <string>${APP_NAME}</string>
     <key>CFBundleVersion</key>
@@ -131,9 +131,9 @@ install_and_start() {
     sleep 1
 
     if launchctl list | grep -q "com.mikekelly.gap-server"; then
-        osascript -e 'display dialog "GAP Server installed and running!\n\nIt will start automatically at login.\n\nUse the gap CLI to manage credentials and tokens." buttons {"OK"} default button "OK" with title "GAP - Gated Agent Proxy"'
+        osascript -e 'display dialog "GAP Server installed and running!\n\nIt will start automatically at login.\n\nUse the gap CLI to manage credentials and tokens." buttons {"OK"} default button "OK" with title "Gap"'
     else
-        osascript -e 'display dialog "GAP Server installation failed.\n\nCheck /tmp/gap-server.log for details." buttons {"OK"} default button "OK" with icon stop with title "GAP - Error"'
+        osascript -e 'display dialog "GAP Server installation failed.\n\nCheck /tmp/gap-server.log for details." buttons {"OK"} default button "OK" with icon stop with title "Gap - Error"'
     fi
 }
 
@@ -144,13 +144,13 @@ show_status() {
         STATUS="Stopped"
     fi
 
-    CHOICE=$(osascript -e 'display dialog "GAP Server Status: '"$STATUS"'\n\nThe server runs automatically at login." buttons {"Uninstall", "Reinstall", "OK"} default button "OK" with title "GAP - Gated Agent Proxy"' -e 'button returned of result' 2>/dev/null)
+    CHOICE=$(osascript -e 'display dialog "GAP Server Status: '"$STATUS"'\n\nThe server runs automatically at login." buttons {"Uninstall", "Reinstall", "OK"} default button "OK" with title "Gap"' -e 'button returned of result' 2>/dev/null)
 
     case "$CHOICE" in
         "Uninstall")
             launchctl unload "$PLIST_DST" 2>/dev/null
             rm -f "$PLIST_DST"
-            osascript -e 'display dialog "GAP Server uninstalled." buttons {"OK"} default button "OK" with title "GAP"'
+            osascript -e 'display dialog "GAP Server uninstalled." buttons {"OK"} default button "OK" with title "Gap"'
             ;;
         "Reinstall")
             install_and_start

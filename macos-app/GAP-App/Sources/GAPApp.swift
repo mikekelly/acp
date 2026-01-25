@@ -47,21 +47,21 @@ struct GAPApp: App {
 
             Divider()
 
-            Button("Open GAP...") {
+            Button("Open Gap...") {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
 
             Divider()
 
-            Button("Quit GAP") {
+            Button("Quit Gap") {
                 NSApplication.shared.terminate(nil)
             }
         } label: {
             Image(systemName: appState.serverRunning ? "lock.shield.fill" : "lock.shield")
         }
 
-        Window("GAP", id: "main") {
+        Window("Gap", id: "main") {
             ContentView()
                 .environmentObject(appState)
         }
@@ -99,17 +99,17 @@ struct ServerInstallView: View {
                 .font(.system(size: 48))
                 .foregroundColor(.accentColor)
 
-            Text("GAP Server Not Installed")
+            Text("Gap Server Not Installed")
                 .font(.headline)
 
-            Text("The GAP server needs to be installed before you can use the app.")
+            Text("The Gap server needs to be installed before you can use the app.")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .frame(width: 300)
 
             Button("Install Server") {
                 print("BUTTON PRESSED")
-                NSLog("GAP: Install button clicked!")
+                NSLog("Gap: Install button clicked!")
                 let result = "Button clicked at \(Date())"
                 do {
                     try result.write(toFile: "/tmp/gap-button-click.txt", atomically: true, encoding: .utf8)
@@ -145,7 +145,7 @@ struct ServerStartView: View {
                 .font(.system(size: 48))
                 .foregroundColor(.accentColor)
 
-            Text("GAP Server Stopped")
+            Text("Gap Server Stopped")
                 .font(.headline)
 
             Text("The server is installed but not currently running.")
@@ -196,10 +196,10 @@ struct ServerInitView: View {
                 .font(.system(size: 48))
                 .foregroundColor(.accentColor)
 
-            Text("Set Up GAP Password")
+            Text("Set Up Gap Password")
                 .font(.headline)
 
-            Text("Create a password to secure your GAP server. This password will be required to manage plugins and tokens.")
+            Text("Create a password to secure your Gap server. This password will be required to manage plugins and tokens.")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .frame(width: 300)
