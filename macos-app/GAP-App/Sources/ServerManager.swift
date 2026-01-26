@@ -4,6 +4,7 @@ import Foundation
 class ServerManager: ObservableObject {
     @Published var isRunning = false
     @Published var isInstalled = false
+    @Published var isInstalling = false
 
     private let helperBundleID = "com.mikekelly.gap-server"
     private let launchAgentLabel = "com.mikekelly.gap-server"
@@ -53,16 +54,83 @@ class ServerManager: ObservableObject {
         return running
     }
 
+    /// Install the LaunchAgent and start the server.
+    /// This method is idempotent - calling it multiple times is safe.
+    /// If already installed and running, it does nothing.
+    /// If install is already in progress, it does nothing.
     func install() {
-        // Debug: write a marker file to verify this function is called
-        try? "install() called at \(Date())".write(toFile: "/tmp/gap-install-debug.txt", atomically: true, encoding: .utf8)
-        NSLog("GAP: install() called")
+        // Idempotency: skip if already installing
+        guard !isInstalling else {
+            NSLog("GAP: install() skipped - installation already in progress")
+            return
+        }
+
+        // Idempotency: skip if already installed and running
+        checkStatus()
+        if isInstalled && isRunning {
+            NSLog("GAP: install() skipped - server already installed and running")
+            return
+        }
+
+        isInstalling = true
+        NSLog("GAP: install() started")
 
         // Install LaunchAgent for KeepAlive
         installLaunchAgent()
 
         // Start the server
         start()
+
+        // Mark installation complete after a short delay to allow server to start
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.isInstalling = false
+            self?.checkStatus()
+            NSLog("GAP: install() completed")
+        }
+    }
+
+    /// Ensure the server is installed and running.
+    /// This is the main entry point for auto-installation on app launch.
+    /// It handles all edge cases: fresh install, already installed, server down, etc.
+    func ensureInstalled() {
+        checkStatus()
+
+        if isInstalled && isRunning {
+            // Already good, nothing to do
+            NSLog("GAP: ensureInstalled() - server already installed and running")
+            return
+        }
+
+        if isInstalled && !isRunning {
+            // LaunchAgent exists but server not running - try to reload
+            NSLog("GAP: ensureInstalled() - server installed but not running, reloading")
+            isInstalling = true
+            reload()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.isInstalling = false
+                self?.checkStatus()
+            }
+            return
+        }
+
+        // Not installed - do full install
+        NSLog("GAP: ensureInstalled() - server not installed, installing")
+        install()
+    }
+
+    /// Reload the LaunchAgent (unload then load)
+    private func reload() {
+        let unloadTask = Process()
+        unloadTask.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        unloadTask.arguments = ["unload", launchAgentPath]
+        try? unloadTask.run()
+        unloadTask.waitUntilExit()
+
+        let loadTask = Process()
+        loadTask.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        loadTask.arguments = ["load", launchAgentPath]
+        try? loadTask.run()
+        loadTask.waitUntilExit()
     }
 
     private func installLaunchAgent() {

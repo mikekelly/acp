@@ -150,21 +150,22 @@ struct GAPApp: App {
     var body: some Scene {
         MenuBarExtra {
             // Use standard menu items for reliability
-            if !appState.serverInstalled {
-                Button("Install Server") {
-                    try? "Menu Install at \(Date())".write(toFile: "/tmp/gap-menu-install.txt", atomically: true, encoding: .utf8)
-                    appState.installServer()
-                }
+            if appState.serverInstalling {
+                Text("Setting up...")
             } else if appState.serverRunning {
-                Text("✓ Server Running")
+                Text("Server Running")
                 Button("Stop Server") {
                     appState.stopServer()
                 }
-            } else {
-                Text("○ Server Stopped")
+            } else if appState.serverInstalled {
+                Text("Server Stopped")
                 Button("Start Server") {
                     appState.startServer()
                 }
+            } else {
+                // Not installed and not installing - this shouldn't normally happen
+                // since we auto-install on launch, but handle it just in case
+                Text("Server Not Ready")
             }
 
             Divider()
@@ -195,10 +196,11 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
-        let _ = try? "ContentView: installed=\(appState.serverInstalled), running=\(appState.serverRunning), initialized=\(appState.serverInitialized), auth=\(appState.isAuthenticated) at \(Date())".write(toFile: "/tmp/gap-state.txt", atomically: true, encoding: .utf8)
+        let _ = try? "ContentView: installed=\(appState.serverInstalled), running=\(appState.serverRunning), installing=\(appState.serverInstalling), initialized=\(appState.serverInitialized), auth=\(appState.isAuthenticated) at \(Date())".write(toFile: "/tmp/gap-state.txt", atomically: true, encoding: .utf8)
 
-        if !appState.serverInstalled {
-            ServerInstallView()
+        if appState.serverInstalling || (!appState.serverInstalled && !appState.serverRunning) {
+            // Show setup view while installing or during initial setup
+            ServerSetupView()
         } else if !appState.serverRunning {
             ServerStartView()
         } else if !appState.serverInitialized {
@@ -211,48 +213,33 @@ struct ContentView: View {
     }
 }
 
-/// View shown when the server is not installed
-struct ServerInstallView: View {
+/// View shown while the server is being set up (auto-install in progress)
+struct ServerSetupView: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "arrow.down.circle")
-                .font(.system(size: 48))
-                .foregroundColor(.accentColor)
+            ProgressView()
+                .scaleEffect(1.5)
+                .padding(.bottom, 8)
 
-            Text("Gap Server Not Installed")
+            Text("Setting up Gap...")
                 .font(.headline)
 
-            Text("The Gap server needs to be installed before you can use the app.")
+            Text("Installing and starting the Gap server. This only takes a moment.")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
                 .frame(width: 300)
-
-            Button("Install Server") {
-                print("BUTTON PRESSED")
-                NSLog("Gap: Install button clicked!")
-                let result = "Button clicked at \(Date())"
-                do {
-                    try result.write(toFile: "/tmp/gap-button-click.txt", atomically: true, encoding: .utf8)
-                    print("Wrote to file")
-                } catch {
-                    print("Write failed: \(error)")
-                }
-                appState.installServer()
-            }
-            .buttonStyle(.borderedProminent)
-            .onHover { hovering in
-                if hovering {
-                    try? "Hovering at \(Date())".write(toFile: "/tmp/gap-hover.txt", atomically: true, encoding: .utf8)
-                }
-            }
         }
         .padding(40)
         .frame(width: 400, height: 300)
         .onAppear {
-            try? "ServerInstallView appeared at \(Date())".write(toFile: "/tmp/gap-view-appeared.txt", atomically: true, encoding: .utf8)
-            print("ServerInstallView onAppear")
+            NSLog("GAP: ServerSetupView appeared")
+            // Trigger install if not already in progress
+            // This handles edge cases where the view appears but install hasn't started
+            if !appState.serverInstalling && !appState.serverInstalled {
+                appState.installServer()
+            }
         }
     }
 }

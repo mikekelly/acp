@@ -30,11 +30,18 @@ class AppState: ObservableObject {
     /// Whether the server is running (delegates to ServerManager)
     var serverRunning: Bool { serverManager.isRunning }
 
+    /// Whether the server is currently being installed (delegates to ServerManager)
+    var serverInstalling: Bool { serverManager.isInstalling }
+
     /// Whether the user has successfully authenticated
     var isAuthenticated: Bool { passwordHash != nil }
 
     init() {
         self.serverManager = ServerManager()
+
+        // Auto-install server on app launch
+        // This is idempotent - safe to call even if already installed
+        serverManager.ensureInstalled()
     }
 
     /// Check server status and update initialization state
