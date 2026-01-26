@@ -154,9 +154,6 @@ struct GAPApp: App {
                 Text("Setting up...")
             } else if appState.serverRunning {
                 Text("Server Running")
-                Button("Stop Server") {
-                    appState.stopServer()
-                }
             } else if appState.serverInstalled {
                 Text("Server Stopped")
                 Button("Start Server") {
@@ -170,7 +167,7 @@ struct GAPApp: App {
 
             Divider()
 
-            Button("Open Gap...") {
+            Button("Gap Dashboard") {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
