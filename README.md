@@ -6,13 +6,13 @@
 
 ## The Problem
 
-AI agents need to call APIs on your behalf - search the web, access your cloud services, interact with third-party tools. But how do you give them access? Today's approach is not ideal - agents are entrusted with access to API credentials.
+AI agents need to call APIs on your behalf - search the web, access your cloud services, interact with third-party tools. But how do you give them access? Today's approach is not ideal: agents are entrusted with access to API credentials - even MCPs don't keep the credentials out of reach. 
 
 ## The Solution
 
-Gap lets you grant agents authenticated API access without giving them your credentials.
+Gap lets you give agents API access without giving them your credentials.
 
-Agents **opt in** by routing requests through the proxy. You give them a proxy token - not your API keys. When they make a request to an API you've authorized, Gap injects your credentials at the network layer. The agent never sees them.
+Agents can only access secure APIs by going via Gap. You give them a Gap token - not your API keys. When they make a request to an API you've gapped, Gap injects your credentials for them. The agent never sees the credentials.
 
 <p align="center">
   <img src="gap_visualised.png" alt="Gap Header" width="400px">
@@ -21,12 +21,12 @@ Agents **opt in** by routing requests through the proxy. You give them a proxy t
 **Why this matters:**
 - **Prompt injection can't leak credentials** - The agent doesn't have them. A malicious prompt can't trick the agent into revealing what it doesn't possess.
 - **Stolen tokens are useless off-machine** - Prompt injection could exfiltrate a Gap token, but by default the proxy is only accessible on your machine (localhost loopback).
-- **Credentials are never exposed to agents** - Stored using the keychain (macOS) or under a dedicated service user (Linux), they're not accessible to your agents.
+- **Credentials are never exposed to agents** - They're encrypted using the keychain (macOS) or under a dedicated service user (Linux); inaccessible to your agents.
 - **Gap can only be managed with your passcode** - To manage gap, you must know the secret you set it up with. If you don't write this down on your machine, agents can't change anything.
 - **One-way credential flow** - Credentials go into Gap and never come back out. There's no API to retrieve them, no export function. The only path out is privilege escalation on your machine.
-- **Works with any agent or software stack** - If it can use an HTTP proxy, it works with Gap
 - **Monitor your agents** - By funneling access through Gap, you can monitor and record all of their interactions with your secured services. 
 - **Enforce policies** - Gap can act as an enforcer of policies. Rate limit requests, restrict certain activities, require human authorisation, etc.
+- **Works with any agent or software stack** - If it can use an HTTP proxy, it works with Gap. MCPs, cli tools, scripts in a skill - all of these can be easily gapped.
 
 ## Get Started
 
@@ -143,24 +143,6 @@ gap set mikekelly/exa-gap:apiKey
 gap token create my-agent
 ```
 
-#### 6. Use the proxy
-
-```bash
-# CA cert location varies by platform:
-# - macOS: ~/Library/Application\ Support/gap/ca.crt
-# - Linux: /var/lib/gap/ca.crt
-
-curl -x https://localhost:9443 \
-     --proxy-cacert ~/Library/Application\ Support/gap/ca.crt \
-     --cacert ~/Library/Application\ Support/gap/ca.crt \
-     --proxy-header "Proxy-Authorization: Bearer gap_xxxxxxxxxxxx" \
-     -H "Content-Type: application/json" \
-     -d '{"query": "latest AI news", "numResults": 3}' \
-     https://api.exa.ai/search
-```
-
-> **Note:** On Linux, replace `~/Library/Application\ Support/gap/ca.crt` with `/var/lib/gap/ca.crt`
-
 ### Docker (for containerized agents)
 
 > **Security note:** The Docker deployment is designed for environments where **agents also run in containers**. If your agent runs directly on the host machine, use the native macOS/Linux installation instead - a host-based agent could potentially access the Docker volume and read credentials directly, bypassing the proxy's protection.
@@ -182,7 +164,7 @@ docker run -d \
   mikekelly321/gap:latest
 ```
 
-#### Docker Compose (recommended for containerized agents)
+#### Example Docker Compose
 
 ```yaml
 services:
@@ -220,12 +202,6 @@ volumes:
 networks:
   agent-network:
 ```
-
-**Important notes:**
-- The proxy now uses **HTTPS** on port 9443 (not HTTP)
-- Agents must trust Gap's CA certificate for both the proxy TLS connection and HTTPS MITM
-- Export the CA cert from the container: `docker cp gap-server:/var/lib/gap/ca.crt ./gap-ca.crt`
-- This isolates credentials from the agent - the agent container cannot access the `gap-data` volume
 
 #### Volume requirement
 
@@ -265,59 +241,26 @@ cargo build --release
 ./target/release/gap set "mikekelly/exa-gap:apiKey"
 ```
 
-#### 3. Create an agent token
-
-```bash
-# Create a token that can use the Exa plugin
-./target/release/gap token create my-agent --plugins mikekelly/exa-gap
-```
-
-This outputs a token like `gap_19ba8e89e25` - give this to your agent.
-
-#### 4. Configure your agent to use the proxy
-
-Point your agent's HTTP traffic through Gap:
-
-```bash
-# The proxy runs on localhost:9443
-# Your agent needs to trust the CA certificate at:
-#   macOS: ~/Library/Application Support/gap/ca.crt
-#   Linux: /var/lib/gap/ca.crt
-
-# Example with curl (macOS):
-curl --proxy https://127.0.0.1:9443 \
-     --proxy-cacert ~/Library/Application\ Support/gap/ca.crt \
-     --cacert ~/Library/Application\ Support/gap/ca.crt \
-     --proxy-header "Proxy-Authorization: Bearer gap_19ba8e89e25" \
-     -X POST https://api.exa.ai/search \
-     -H "Content-Type: application/json" \
-     -d '{"query":"latest AI news","numResults":3}'
-```
-
-The agent sends the request without any API key - Gap injects it automatically.
-
 ## How It Works
 
 1. **Agent makes request** through the proxy with its bearer token
 2. **Gap authenticates** the agent and checks which plugins it can use
 3. **Plugin matches** the target hostname (e.g., `api.exa.ai`)
-4. **Credentials loaded** from secure storage (Keychain on macOS, service user on Linux)
+4. **Credentials loaded** from secure storage
 5. **JavaScript transform** injects credentials into the request
 6. **Request forwarded** to the actual API
 
 ### Security Model
 
 Credentials are **write-only** and **stored outside your user context**:
-- **macOS**: Stored in the system Keychain, isolated from user-space processes
+- **macOS**: Stored encrypted using a key in the Keychain, isolated from user-space processes
 - **Linux**: Stored with restricted permissions under a dedicated service user
 
 There's no "get credential" API, no way to list credential values, no export function. The only way to use a credential is through the proxy - and the only way to extract one is privilege escalation to root/admin.
 
 This is a fundamentally different security posture than giving credentials to an agent, where a single prompt injection could exfiltrate them to an attacker-controlled server.
 
-**Agent tokens:** Tokens are for **tracking and audit**, not strong authentication. Any process that can read the token (other agents, scripts, humans with shell access) can use it. The real security boundary is the credential store - tokens just help you see which agent made which request.
-
-**CLI attack surface:** When you use the CLI to manage credentials (`gap set`, `gap init`), you enter secrets interactively via secure terminal input (no echo, never stored). The CLI immediately hashes these with SHA512 before transmitting to the management API. The plaintext exists in the CLI process memory only briefly (milliseconds). Current transport from CLI to management API is HTTP on localhost. HTTPS using the existing `ca.crt` is on the roadmap for defense in depth. Remaining attack vectors all require host compromise: memory scraping during the brief plaintext window, or keylogger/terminal interception. These are edge cases requiring privilege escalation - and if an attacker has that level of access, they could access the credential store directly anyway.
+**Agent tokens:** Tokens are for **tracking and audit**, not strong authentication. Any process that can read the token (other agents, scripts, humans with shell access) can use it. The real security boundary is the credential store - tokens just help you try and keep track of which agent made which request.
 
 Plugins are simple JavaScript:
 
@@ -353,8 +296,6 @@ Agent tokens control which APIs can be accessed, but not which credentials are u
 
 With Gap: credentials stay in secure storage, agent gets scoped access via token, you control which APIs, you can revoke instantly.
 
-With direct API keys: credentials in chat logs, sent to LLM providers, vulnerable to prompt injection, no revocation without rotating keys everywhere.
-
 **Q: Can I use this with Claude Code, Cursor, or other IDEs?**
 
 Yes, if the IDE supports HTTPS proxy configuration. The proxy uses **HTTPS on port 9443** (not HTTP). Point it to `https://localhost:9443` and configure the IDE to trust Gap's CA certificate at:
@@ -368,38 +309,6 @@ Each IDE has different proxy settings - check their documentation.
 **Q: Do I need to trust the agent framework?**
 
 You need to trust it not to exfiltrate data it receives from APIs (like search results), but you don't need to trust it with your credentials. The agent never sees them.
-
-## Project Status
-
-**Core functionality complete:**
-- MITM proxy with TLS interception
-- JavaScript plugin system with credential injection
-- Secure credential storage (macOS Keychain, Linux service user isolation)
-- CLI for management
-- Management API for programmatic control
-
-## Roadmap
-
-### Native GUI Applications
-
-The CLI works, but managing credentials should be as easy as a password manager. We're building native desktop apps with:
-
-- **Push-based approval** - get notified when agents request access tokens or trigger suspicious activity
-- **Credential management** - add, remove, and rotate API keys through a familiar UI
-
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **macOS** | Available | Swift/SwiftUI menu bar app with Data Protection Keychain - see [macos-app](./macos-app/) |
-| **Linux** | Planned | GTK4, libsecret integration, system tray |
-| **Windows** | Planned | WinUI 3, Credential Manager integration |
-
-### Coming Soon
-
-- **HTTPS for CLI → proxy communication** - defense in depth using existing ca.crt to prevent network observers from seeing even hashed shared secrets
-- **Linux distro packages** - .deb, .rpm, and other native packages for easier installation
-- **Audit logging** - full trail of what credentials were used when
-- **Policy plugins** - custom policies that can assess and block requests
-- **Rate limiting policy** - prevent runaway agents from burning through quotas
 
 ## Contributing
 
