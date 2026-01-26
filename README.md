@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="gap_logo.png" alt="GAP Logo" width="250">
+  <img src="gap_header.png" alt="GAP Header" width="800">
 </p>
 
 # GAP (Gated Agent Proxy)
