@@ -52,8 +52,6 @@ cat > "build/${APP_NAME}.app/Contents/Info.plist" <<EOF
     <string>public.app-category.developer-tools</string>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>LSUIElement</key>
-    <true/>
     <key>CFBundleIconName</key>
     <string>AppIcon</string>
 </dict>

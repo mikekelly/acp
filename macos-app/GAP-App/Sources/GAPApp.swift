@@ -31,6 +31,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         bundleMonitor?.startMonitoring()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            NotificationCenter.default.post(name: .openMainWindow, object: nil)
+        }
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         bundleMonitor?.stopMonitoring()
     }
@@ -148,6 +155,15 @@ struct GAPApp: App {
     @Environment(\.openWindow) var openWindow
 
     var body: some Scene {
+        Window("Gap", id: "main") {
+            ContentView()
+                .environmentObject(appState)
+                .onReceive(NotificationCenter.default.publisher(for: .openMainWindow)) { _ in
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+        }
+        .defaultSize(width: 700, height: 500)
+
         MenuBarExtra {
             // Use standard menu items for reliability
             if appState.serverInstalling {
@@ -180,13 +196,11 @@ struct GAPApp: App {
         } label: {
             Image("MenuBarIcon")
         }
-
-        Window("Gap", id: "main") {
-            ContentView()
-                .environmentObject(appState)
-        }
-        .defaultSize(width: 700, height: 500)
     }
+}
+
+extension Notification.Name {
+    static let openMainWindow = Notification.Name("OpenMainWindow")
 }
 
 struct ContentView: View {

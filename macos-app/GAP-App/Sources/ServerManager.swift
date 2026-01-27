@@ -81,12 +81,8 @@ class ServerManager: ObservableObject {
         // Start the server
         start()
 
-        // Mark installation complete after a short delay to allow server to start
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.isInstalling = false
-            self?.checkStatus()
-            NSLog("GAP: install() completed")
-        }
+        // Poll until server is detected running (TLS setup can take a few seconds)
+        pollUntilRunning(attemptsRemaining: 10)
     }
 
     /// Ensure the server is installed and running.
@@ -106,16 +102,30 @@ class ServerManager: ObservableObject {
             NSLog("GAP: ensureInstalled() - server installed but not running, reloading")
             isInstalling = true
             reload()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                self?.isInstalling = false
-                self?.checkStatus()
-            }
+            pollUntilRunning(attemptsRemaining: 10)
             return
         }
 
         // Not installed - do full install
         NSLog("GAP: ensureInstalled() - server not installed, installing")
         install()
+    }
+
+    /// Poll every second until the server responds, then clear isInstalling
+    private func pollUntilRunning(attemptsRemaining: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self = self else { return }
+            self.checkStatus()
+            if self.isRunning {
+                self.isInstalling = false
+                NSLog("GAP: Server detected running after polling")
+            } else if attemptsRemaining > 0 {
+                self.pollUntilRunning(attemptsRemaining: attemptsRemaining - 1)
+            } else {
+                self.isInstalling = false
+                NSLog("GAP: Server not detected after polling, giving up")
+            }
+        }
     }
 
     /// Reload the LaunchAgent (unload then load)
